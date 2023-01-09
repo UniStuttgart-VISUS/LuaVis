@@ -1,0 +1,279 @@
+{
+	"wos": {
+		"game": {
+			"assets": {
+				"path": "assets",
+				"packages": [],
+				"autoReload": {
+					"enabled": true,
+					"delay": {
+						"enabled": true,
+						"force": false,
+						"interval": 0.05,
+						"maximum": 0.5,
+					},
+				},
+				"external": {
+					"required": false,
+					"prompt": "Choose Crypt of the NecroDancer installation directory",
+					"checkFile": "data/necrodancer.xml",
+					"steamAppName": "Crypt of the NecroDancer",
+					"mountPoints": [
+						{"source": "dungeons", "target": "ext/dungeons"},
+						{"source": "downloaded_dungeons", "target": "ext/downloaded_dungeons"},
+						{"source": "mods", "target": "ext/mods"},
+						{"source": "downloaded_mods", "target": "ext/downloaded_mods"},
+						{"source": "replays", "target": "ext/replays"},
+						{"source": "data", "target": "ext"}
+					]
+				},
+				"graphics": {
+					"path": "gfx",
+					"extension": ".png"
+				},
+				"scripts": {
+					"path": "scripts",
+					"corePath": "core",
+					"systemPath": "system",
+					"extension": ".lua",
+					"init": "core.Init",
+					"ffiApiPath": "api"
+				},
+				"ecs": {
+					"path": "ecs",
+					"extension": ".json"
+				},
+				"compression": {
+					"dictionaryPath": "zstd"
+				}
+			},
+			"debug": {
+				"logging": {
+					"console": {
+						"verbosity": 4,
+					},
+					"file": {
+						"verbosity": 5,
+						"name": "LuaVis.log",
+						"flushInterval": 1.0,
+					},
+				},
+				"openEditorOnError": false,
+				"editorCommandLine": "",
+				"reset": {
+					"enabled": true,
+					"key": "F2",
+				},
+			},
+			"steam": {
+				"enabled": false,
+				"appID": 247080,
+			},
+			"ipc": {
+				"enabled": false,
+				"port": 8980,
+				"ip": "127.0.0.1",
+			},
+			"graphics": {
+				"filterTextures": false,
+			},
+			"mods": {
+				"scriptWhitelist": [
+					"necro.*",
+					"system.game.Audio",
+					"system.game.Bitmap",
+					"system.game.Entities",
+					"system.game.FileIO",
+					"system.game.Graphics",
+					"system.game.Input",
+					"system.game.IPC",
+					"system.events.*",
+					"system.gfx.*",
+					"system.utils.*",
+				],
+				"scriptBlacklist": [
+					"necro.mod.*",
+				],
+				"loadPaths": [
+					{
+						"name": "unpackaged",
+						"path": "mods",
+						"package": false,
+						"location": "USER_DATA",
+					},
+					{
+						"name": "packaged",
+						"path": "mods",
+						"package": true,
+						"location": "USER_DATA",
+					},
+					{
+						"name": "downloaded",
+						"path": "downloadedMods",
+						"package": true,
+						"location": "USER_DATA",
+					},
+					{
+						"name": "dlc",
+						"path": "dlc",
+						"package": true,
+						"location": "USER_DATA",
+					},
+					{
+						"name": "repository",
+						"path": "Mods",
+						"package": false,
+						"location": "WORKING_DIRECTORY_PARENT",
+						"autoCreate": false,
+					},
+				],
+			},
+			"title": "LuaVis",
+			"version": "v0",
+			"size": [644, 540],
+			"framerate": 60,
+			"icon": "gfx/necro/icons/synchrony.png",
+		},
+		"gui": {
+			"renderer": {
+				"box": {
+					"baseColor": [24, 28, 46],
+					"baseGradient": 0.0,
+					"outlineColor": [120, 145, 215],
+					"outlineThickness": 1.0,
+					"hover": {
+						"color": [255, 255, 255],
+						"interpolation": 0.125,
+						"gradientChange": 0.0,
+						"outlineColor": [255, 255, 255],
+						"outlineInterpolation": 1.0,
+						"fade": 0.0
+					},
+					"focused": {
+						"color": [255, 255, 255],
+						"interpolation": 0.08,
+						"gradientChange": 0.0,
+						"outlineColor": [100, 150, 200],
+						"outlineInterpolation": 0.0,
+						"fade": 0.0
+					},
+					"marked": {
+						"color": [17, 33, 18],
+						"interpolation": 1.0,
+						"gradientChange": 0.0,
+						"outlineColor": [90, 160, 95],
+						"outlineInterpolation": 1.0,
+						"fade": 0.0
+					},
+					"dark": {
+						"color": [0, 0, 0],
+						"interpolation": 0.4,
+						"gradientChange": 0.0,
+						"outlineColor": [],
+						"outlineInterpolation": 0.0,
+						"fade": 0.0
+					},
+					"background": {
+						"color": [25, 25, 25],
+						"interpolation": 0.85,
+						"gradientChange": 0.0,
+						"outlineColor": [25, 25, 25],
+						"outlineInterpolation": 0.5,
+						"fade": 0.15
+					},
+					"selection": {
+						"color": [95, 165, 200],
+						"interpolation": 1.0,
+						"gradientChange": 0.0,
+						"outlineColor": [75, 125, 18],
+						"outlineInterpolation": 1.0,
+						"fade": 0.0
+					},
+					"disabled": {
+						"color": [],
+						"interpolation": 0.0,
+						"gradientChange": 0.0,
+						"outlineColor": [],
+						"outlineInterpolation": 0.0,
+						"fade": 0.4
+					}
+				}
+			}
+		}
+	},
+	"gui": {
+		"models": {
+			"table": {
+				"string": {
+					"rowHeight": 20,
+					"columnSpacing": {
+						"left": 4,
+						"right": 2,
+						"between": 2
+					},
+					"selection": {
+						"focused": {
+							"topColor": [55, 70, 150],
+							"bottomColor": [55, 70, 150],
+							"outlineColor": [255, 255, 255],
+							"outlineThickness": 0
+						},
+						"unfocused": {
+							"topColor": [55, 70, 150, 200],
+							"bottomColor": [55, 70, 150, 200],
+							"outlineColor": [255, 255, 255, 200],
+							"outlineThickness": 0
+						}
+					}
+				}
+			}
+		},
+		"pieces": {
+			"text": {
+				"font": "gfx/font.png"
+			}
+		},
+		"widgets": {
+			"checkbox": {
+				"buttonSize": [16, 16],
+				"buttonGap": 5
+			},
+			"slider": {
+				"handle": {
+					"size": 10
+				},
+				"scrolling": {
+					"speed": 1,
+					"animationSpeed": 20
+				}
+			},
+			"table": {
+				"margin": 1,
+				"scrollBar": {
+					"size": 24,
+					"speed": 40,
+					"smooth": true
+				}
+			},
+			"textField": {
+				"margins": [4, 2],
+				"selection": {
+					"topColor": [95, 165, 200, 200],
+					"bottomColor": [75, 125, 180, 200],
+					"outlineColor": [75, 125, 180, 200],
+					"outlineThickness": 1
+				}
+			},
+			"window": {
+				"margin": 1,
+				"overlap": 1,
+				"visibilityThreshold": 4,
+				"titleBar": {
+					"height": 24,
+					"color": [36, 45, 80]
+				},
+				"resizeMargin": 8
+			}
+		}
+	}
+}
