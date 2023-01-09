@@ -48,7 +48,7 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 # Set executable name
-set(EXECUTABLE_NAME "WorldOfSand")
+set(EXECUTABLE_NAME "LuaVis")
 
 if(APPLE)
 	# Special handling for RPATH on MacOS
