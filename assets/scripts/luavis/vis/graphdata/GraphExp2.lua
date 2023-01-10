@@ -1,5 +1,5 @@
 local graphData = {}
-graphData.imgDir = [[/media/marukyu/Elements/data/bigdl/uni/master/NewDataset/Exp2sub/1901.png]]
+graphData.imgDir = [[gfx_2/Exp2sub/1901.png]]
 graphData.minRange = 0.0248227
 graphData.maxRange = 0.836879
 graphData.imgW = 2171
