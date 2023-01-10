@@ -13,17 +13,36 @@ local performance = require "system.debug.Performance"
 
 local graphData = require "luavis.vis.graphdata.GraphCa3M10"
 
+local debug_text = function(text, offset_y)
+	local offset_y = offset_y or 0
+	draw.text {
+			font = draw.Font.SYSTEM,
+			text = "" .. text,
+			x = 300,
+			y = 15 + offset_y,
+			size = 12,
+			fillColor = color.hsv(0.5, 0.8, 1, 1),
+			outlineColor = color.BLACK,
+			outlineThickness = 1,
+			alignX = 0,
+			alignY = 1,
+		}
+	end
+
 local imgDir = (graphData.imgDir
 	and (graphData.imgDir:match("(gfx_1/.*/)[^/]*$") or graphData.imgDir:match("(gfx_2/.*/)[^/]*$"))
 	or "unknown")
 
 local metricHeight = 100
+local headerHeight = metricHeight + 10
+
+local graphHeight = gfx.getHeight() - headerHeight
+local graphWidth = gfx.getWidth() - headerHeight * gfx.getWidth() / gfx.getHeight()
+local offsetX = (gfx.getWidth() - graphWidth) / 2
+local offsetY = headerHeight
 
 imgCacheDir = nil
 imgCache = {}
-
-local screenSize = vector2(gfx.getWidth(), gfx.getHeight())
-local screenCenter = screenSize / 2
 
 local pi = math.pi
 
@@ -475,7 +494,7 @@ local function initNodes()
 
 	local posMapper = getPosMapper(posMapperIndex)
 
-	local wSize = vector2(gfx.getSize())
+	local wSize = vector2(graphWidth, graphHeight)
 
 	timestampHeight = {}
 	filledSlots = {}
@@ -555,7 +574,7 @@ local function initNodes()
 		--node[10] = vector2(node[3], node[4]) / vector2(2448, 2050) * vector2(gfx.getSize())
 		--node[10] = vector2((node[1] / frameCnt - minRange) / range, y / 40 + 0.01) * vector2(gfx.getSize())
 		--node[10] = vector2((node[1] / frameCnt - minRange) / range, node[4] / 2050) * vector2(gfx.getSize())
-		node[10] = posMapper(node) * wSize
+		node[10] = vector2(offsetX, offsetY) + posMapper(node) * wSize
 
 
 		local col = utils.clamp(0, (node[1] - frameNum) + 0.5, 1)
@@ -633,9 +652,9 @@ end
 local function drawColorScale()
 	local margin = 10
 	local size = vector2(120, 20)
-	local left = screenCenter.x - screenCenter.y
+	local left = (graphWidth - graphHeight) / 2
 	local labels = {formatTemperature(tempMin), formatTemperature(tempMax)}
-	nodeColorScale.render(rect(left + margin, screenSize.y - margin - size.y, size.x, size.y), 2, labels)
+	nodeColorScale.render(rect(left + margin, graphHeight - margin - size.y, size.x, size.y), 2, labels)
 end
 
 event.themeChanged.add("graph2", "colors", initColorScales)
@@ -651,7 +670,7 @@ frameBuffers = {}
 fbSize = nil
 
 local function getX(i)
-	return ((i - 1 - minRange * frameCnt) - 0.5) * gfx.getWidth() / frameCnt / range
+	return ((i - 1 - minRange * frameCnt) - 0.5) * graphWidth / frameCnt / range
 end
 
 metricFanciness = true
@@ -660,7 +679,7 @@ local metY = 0
 
 local function drawMetricFancy(metData)
 	local lgs = logScale and math.log
-	local colWidth = gfx.getWidth() / frameCnt / range
+	local colWidth = graphWidth / frameCnt / range
 	local fMin = minRange * frameCnt
 	local height = metricHeight / (lgs and lgs(metData.maxRaw + 1) or metData.maxRaw)
 	local fillColor = color.hsv(metData.id * 0.3 + 0.5, (metData.id * 0.15 + 0.4) % 1, 1)
@@ -680,10 +699,10 @@ local function drawMetricFancy(metData)
 				t = nodes[i][1]
 				ys = {}
 			end
-			local y = metY + 5 - height * metVal
+			local y = metY - height * metVal
 			local intensity = (ys[floor(y)] or 5) + 1
 			ys[floor(y)] = intensity
-			gfx.drawBox({((t - fMin) - 0.5) * colWidth, y, colWidth, 1},
+			gfx.drawBox({offsetX + ((t - fMin) - 0.5) * colWidth, y, colWidth, 1},
 				color.setA(t > breakthrough and breakColor or fillColor, min(255, intensity * 10) ))
 		end
 	end
@@ -691,7 +710,7 @@ end
 
 local function drawMetricUnfancy(metric, metData)
 	local lgs = logScale and math.log
-	local colWidth = gfx.getWidth() / frameCnt / range
+	local colWidth = graphWidth / frameCnt / range
 	local fMin = minRange * frameCnt
 	local height = metricHeight / (lgs and lgs(metData.max + 1) or metData.max)
 	local raw = metData.raw
@@ -705,16 +724,16 @@ local function drawMetricUnfancy(metric, metData)
 			end
 			local t = node[1]
 			local h = height * metVal
-			ys[t] = (ys[t] or (metY + 5 - height * (metric[t + 1] or 0))) + h
-			gfx.drawBox({((t - fMin) - 0.5) * colWidth, ys[t] - h, colWidth, h},
-				color.setA(node[17] or -1, t > breakthrough and 180 or 255))
+			ys[t] = (ys[t] or (metY - height * (metric[t + 1] or 0))) + h
+			gfx.drawBox({offsetX + ((t - fMin) - 0.5) * colWidth, ys[t] - h, colWidth, h},
+				color.setA(node[17] or -1, t > breakthrough and 180 or 220))
 		end
 	end
 end
 
 local function drawMetricUnfancy2(metric, metData)
 	local lgs = logScale and math.log
-	local colWidth = gfx.getWidth() / frameCnt / range
+	local colWidth = graphWidth / frameCnt / range
 	local fMin = minRange * frameCnt
 	local height = metricHeight / (lgs and lgs(metData.max + 1) or metData.max)
 	local fillColor = color.hsv(metData.id * 0.3 + 0.5, (metData.id * 0.15 + 0.4) % 1, 1, activeMetricID and 0.8 or 0.5)
@@ -725,7 +744,7 @@ local function drawMetricUnfancy2(metric, metData)
 			if lgs then
 				metVal = lgs(metVal + 1)
 			end
-			gfx.drawBox({((i - 1 - fMin) - 0.5) * colWidth, metY - height * metVal, colWidth, metVal * height},
+			gfx.drawBox({offsetX + ((i - 1 - fMin) - 0.5) * colWidth, metY - height * metVal, colWidth, metVal * height},
 				i > breakthrough + 1 and breakColor or fillColor)
 		end
 	end
@@ -824,11 +843,11 @@ event.render.add("graph2", "vis", function ()
 		end
 	end
 
-	local colWidth = gfx.getWidth() / frameCnt / range
+	local colWidth = graphWidth / frameCnt / range
 	local mouseX = input.mouseX()
-	if (mouseX < 0) then mouseX = 0 end
-	if (mouseX > gfx.getWidth()) then mouseX = gfx.getWidth() end
-	local newFrame = math.floor(mouseX / colWidth + 0.5 + frameCnt * minRange)
+	if (mouseX < offsetX) then mouseX = offsetX end
+	if (mouseX > graphWidth + offsetX) then mouseX = graphWidth + offsetX end
+	local newFrame = math.min(frameCnt - 1, math.floor((mouseX - offsetX) / colWidth + 0.5 + frameCnt * minRange))
 	if input.mouseDown(1) then
 		if frameNum ~= newFrame then
 			frameNum = newFrame
@@ -837,7 +856,7 @@ event.render.add("graph2", "vis", function ()
 	end
 
 	if screenshotMode then
-		gfx.drawBox({0, 0, gfx.getSize()}, {255, 255, 255, 255})
+		gfx.drawBox({0, 0, gfx.getWidth(), gfx.getHeight()}, {255, 255, 255, 255})
 
 		if activeMetricID == nil then
 			for i=1, #metrics do
@@ -880,15 +899,15 @@ event.render.add("graph2", "vis", function ()
 		end
 
 		--local w, h = gfx.getImageSize(frameBuffers)
-		gfx.drawBox({0, 0, gfx.getSize()}, {32,32,32,255})
+		gfx.drawBox({0, 0, graphWidth, graphHeight}, {32,32,32,255})
 		local fb = frameBuffers[frameMemIndex]
 		if fb then
 			--gfx.drawTintedSprite(fb.id, {0, 0, gfx.getSize()}, {0, 0, imgW, imgH}, {255,255,255,64})
-			gfx.drawTintedSprite(fb.id, {0, 0, gfx.getSize()}, {0, 0, imgW, imgH}, {255,255,255,255})
+			gfx.drawTintedSprite(fb.id, {offsetX, offsetY, graphWidth, graphHeight}, {0, 0, imgW, imgH}, {255,255,255,255})
 		end
 	end
-	--gfx.drawBox({((frameNum - minRange * frameCnt) - 0.5) * colWidth, 0, colWidth, (gfx.getHeight())}, {0, 0, 100, 64})
-	gfx.drawBox({((frameNum - minRange * frameCnt) - 0.5) * colWidth, 0, colWidth, 120}, {0, 0, 100, 64})
+	--gfx.drawBox({((frameNum - minRange * frameCnt) - 0.5) * colWidth, 0, colWidth, (graphHeight)}, {0, 0, 100, 64})
+	gfx.drawBox({offsetX + ((frameNum - minRange * frameCnt) - 0.5) * colWidth, 0, colWidth, metricHeight + 10}, {255, 255, 255, 255})
 
 	drawGraph()
 
@@ -897,10 +916,10 @@ event.render.add("graph2", "vis", function ()
 		if bbox then
 			local col = node[17]
 			local r = {
-				bbox[1] / imgW * gfx.getWidth(),
-				bbox[2] / imgH * gfx.getHeight(),
-				(bbox[3] - bbox[1]) / imgW * gfx.getWidth(),
-				(bbox[4] - bbox[2]) / imgH * gfx.getHeight(),
+				offsetX + bbox[1] / imgW * graphWidth,
+				offsetY + bbox[2] / imgH * graphHeight,
+				(bbox[3] - bbox[1]) / imgW * graphWidth,
+				(bbox[4] - bbox[2]) / imgH * graphHeight,
 			}
 			local margin = node[21] and 3 or 1
 			gfx.drawBox({r[1] + margin, r[2], r[3] - margin * 2, margin}, col)
@@ -939,14 +958,27 @@ event.render.add("graph2", "vis", function ()
 		draw.text {
 			font = draw.Font.SYSTEM,
 			text = graphName,
-			x = 60,
-			y = gfx.getHeight() - 10,
-			size = 24,
+			x = gfx.getWidth() - 20,
+			y = 30,
+			size = 12,
 			fillColor = color.rgb(255, 255, 255),
 			outlineColor = color.BLACK,
 			outlineThickness = 2,
-			alignX = 0,
+			alignX = 1,
 			alignY = 1,
 		}
 	end
+
+		draw.text {
+			font = draw.Font.SYSTEM,
+			text = "Frame: " .. frameNum + 1 .. " / " .. frameCnt,
+			x = gfx.getWidth() - 20,
+			y = 15,
+			size = 12,
+			fillColor = color.rgb(100, 150, 255),
+			outlineColor = color.BLACK,
+			outlineThickness = 2,
+			alignX = 1,
+			alignY = 1,
+		}
 end)
