@@ -11,11 +11,13 @@ local utils = require "system.utils.Utilities"
 local fileIO = require "system.game.FileIO"
 local performance = require "system.debug.Performance"
 
-local graphData = require "luavis.vis.graphdata.GraphCa2M10"
+local graphData = require "luavis.vis.graphdata.GraphCa3M10"
 
-local imgDir = "gfx" .. (graphData.imgDir
-	and (graphData.imgDir:match("(/Dataset1png/.*/)[^/]*$") or graphData.imgDir:match("(/NewDataset/.*/)[^/]*$"))
-	or "/unknown")
+local imgDir = (graphData.imgDir
+	and (graphData.imgDir:match("(gfx_1/.*/)[^/]*$") or graphData.imgDir:match("(gfx_2/.*/)[^/]*$"))
+	or "unknown")
+
+local metricHeight = 100
 
 imgCacheDir = nil
 imgCache = {}
@@ -32,7 +34,7 @@ hidePostBreakthrough = false
 logScale = false
 screenshotMode = false
 
-local dirRTL = not graphData.imgDir:match("(/NewDataset/.*/)[^/]*$")
+local dirRTL = not graphData.imgDir:match("(gfx_2/.*/)[^/]*$")
 
 local nodeColorScale, linkColorScale
 
@@ -374,7 +376,7 @@ local minRange = graphData.minRange
 local maxRange = graphData.maxRange
 
 if true then
-	minRange, maxRange = 0, 0.5
+	minRange, maxRange = 0, 1
 end
 
 if dirRTL then
@@ -660,7 +662,7 @@ local function drawMetricFancy(metData)
 	local lgs = logScale and math.log
 	local colWidth = gfx.getWidth() / frameCnt / range
 	local fMin = minRange * frameCnt
-	local height = 100 / (lgs and lgs(metData.maxRaw + 1) or metData.maxRaw)
+	local height = metricHeight / (lgs and lgs(metData.maxRaw + 1) or metData.maxRaw)
 	local fillColor = color.hsv(metData.id * 0.3 + 0.5, (metData.id * 0.15 + 0.4) % 1, 1)
 	local breakColor = color.hsv(metData.id * 0.3 + 0.5, (metData.id * 0.15 + 0.4) % 1, 0.7)
 	local raw = metData.raw
@@ -678,8 +680,8 @@ local function drawMetricFancy(metData)
 				t = nodes[i][1]
 				ys = {}
 			end
-			local y = metY + 10 - height * metVal
-			local intensity = (ys[floor(y)] or 10) + 1
+			local y = metY + 5 - height * metVal
+			local intensity = (ys[floor(y)] or 5) + 1
 			ys[floor(y)] = intensity
 			gfx.drawBox({((t - fMin) - 0.5) * colWidth, y, colWidth, 1},
 				color.setA(t > breakthrough and breakColor or fillColor, min(255, intensity * 10) ))
@@ -691,7 +693,7 @@ local function drawMetricUnfancy(metric, metData)
 	local lgs = logScale and math.log
 	local colWidth = gfx.getWidth() / frameCnt / range
 	local fMin = minRange * frameCnt
-	local height = 200 / (lgs and lgs(metData.max + 1) or metData.max)
+	local height = metricHeight / (lgs and lgs(metData.max + 1) or metData.max)
 	local raw = metData.raw
 	local ys = {}
 	for i = 1, #nodes do
@@ -703,7 +705,7 @@ local function drawMetricUnfancy(metric, metData)
 			end
 			local t = node[1]
 			local h = height * metVal
-			ys[t] = (ys[t] or (100 + metY + 10 - height * (metric[t + 1] or 0))) + h
+			ys[t] = (ys[t] or (metY + 5 - height * (metric[t + 1] or 0))) + h
 			gfx.drawBox({((t - fMin) - 0.5) * colWidth, ys[t] - h, colWidth, h},
 				color.setA(node[17] or -1, t > breakthrough and 180 or 255))
 		end
@@ -714,7 +716,7 @@ local function drawMetricUnfancy2(metric, metData)
 	local lgs = logScale and math.log
 	local colWidth = gfx.getWidth() / frameCnt / range
 	local fMin = minRange * frameCnt
-	local height = 110 / (lgs and lgs(metData.max + 1) or metData.max)
+	local height = metricHeight / (lgs and lgs(metData.max + 1) or metData.max)
 	local fillColor = color.hsv(metData.id * 0.3 + 0.5, (metData.id * 0.15 + 0.4) % 1, 1, activeMetricID and 0.8 or 0.5)
 	local breakColor = color.fade(fillColor, 0.7)
 	for i = 0, frameCnt do
@@ -730,7 +732,7 @@ local function drawMetricUnfancy2(metric, metData)
 end
 
 local function drawMetric(metric, metData)
-	metY = metY + 105
+	metY = metY + metricHeight + 5
 	if metricFanciness then
 		drawMetricFancy(metData)
 	elseif metData.raw and next(metData.raw) then
@@ -823,7 +825,10 @@ event.render.add("graph2", "vis", function ()
 	end
 
 	local colWidth = gfx.getWidth() / frameCnt / range
-	local newFrame = math.floor(input.mouseX() / colWidth + 0.5 + frameCnt * minRange)
+	local mouseX = input.mouseX()
+	if (mouseX < 0) then mouseX = 0 end
+	if (mouseX > gfx.getWidth()) then mouseX = gfx.getWidth() end
+	local newFrame = math.floor(mouseX / colWidth + 0.5 + frameCnt * minRange)
 	if input.mouseDown(1) then
 		if frameNum ~= newFrame then
 			frameNum = newFrame
