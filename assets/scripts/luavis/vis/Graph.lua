@@ -49,6 +49,7 @@ local pi = math.pi
 local nodeBaseRadius = 0
 local nodeRadiusFactor = 1
 
+hideUnreachedNodes = false
 hidePostBreakthrough = false
 logScale = false
 screenshotMode = false
@@ -599,7 +600,7 @@ local function initNodes()
 		end
 		if src[16] == nil and (src[3] ~= 0 or src[4] ~= 0) then
 			local w = (src[13] + dst[13]) * 0.5
-			links[#links + 1] = {source = src, dest = dst, weight = w - 10}
+			links[#links + 1] = {source = src, dest = dst, weight = w - 10, time = dst[1]}
 			if src[1] <= breakthrough then
 				preBreakLinks[#preBreakLinks + 1] = links[#links]
 			end
@@ -615,6 +616,8 @@ end
 initNodes()
 
 local function drawNode(node)
+	if (hideUnreachedNodes and node[1] > frameNum) then return end
+
 	local nodeRadius = node[12] * nodeRadiusFactor + nodeBaseRadius
 	-- Outline
 	local alpha = math.max(color.getA(node[11]), 50)
@@ -624,7 +627,6 @@ local function drawNode(node)
 	end
 	draw.circle(node[10], nodeRadius + 1, color.rgba(0, 0, 0, alpha), 30)
 	draw.circle(node[10], nodeRadius, node[22], 30)
-	--draw.circle(node[10], nodeRadius, color.hsv(0, 1, 1, 0.8), 30)
 
 	--draw.text {
 	--	font = draw.Font.SYSTEM,
@@ -641,7 +643,8 @@ local function drawNode(node)
 end
 
 local function drawLink(link)
-	--draw.line(link.source[10], link.dest[10], linkColorScale(link.weight), link.weight, 0)
+	if (hideUnreachedNodes and link.time > frameNum) then return end
+
 	draw.line(link.source[10], link.dest[10], color.hsv(0, 0.0, 0.6, 0.6), link.weight, 0)
 end
 
@@ -822,6 +825,9 @@ event.render.add("graph2", "vis", function ()
 
 	if input.keyPress("B") then
 		hidePostBreakthrough = not hidePostBreakthrough
+	end
+	if input.keyPress("N") then
+		hideUnreachedNodes = not hideUnreachedNodes
 	end
 	if input.keyPress("L") then
 		logScale = not logScale
