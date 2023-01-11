@@ -11,29 +11,57 @@ local utils = require "system.utils.Utilities"
 local fileIO = require "system.game.FileIO"
 local performance = require "system.debug.Performance"
 
+-- settings
 local graphData = require "luavis.vis.graphdata.GraphCa3M10"
+local splitScreenRatio = 100 / 540
 
-local debug_text = function(text, offset_y)
-	local offset_y = offset_y or 0
-	draw.text {
-			font = draw.Font.SYSTEM,
-			text = "" .. text,
-			x = 300,
-			y = 15 + offset_y,
-			size = 12,
-			fillColor = color.hsv(0.5, 0.8, 1, 1),
-			outlineColor = color.BLACK,
-			outlineThickness = 1,
-			alignX = 0,
-			alignY = 1,
-		}
+-- keys
+local mouseKeys, settings = {}, {}
+
+local function setKey(keys, setting, default, func)
+	if type(keys) ~= "table" then
+		keys = {keys}
 	end
 
+	for _, key in ipairs(keys) do
+		mouseKeys[tostring(key)] = {setting = setting, func = func}
+	end
+
+	settings[setting] = default
+end
+
+local function pressedKey()
+	for k, v in pairs(mouseKeys) do
+		if (input.keyPress(k)) then
+			v.func(k, v.setting)
+		end
+	end
+end
+
+local function toggle(_, setting)
+	settings[setting] = not settings[setting]
+end
+
+setKey("B", "hidePostBreakthrough", false, toggle)
+setKey("N", "hideUnreachedNodes", false, toggle)
+setKey("W", "unweightedLinks", false, toggle)
+setKey("L", "logScale", false, toggle)
+setKey("F", "metricFanciness", false, toggle)
+setKey("S", "screenshotMode", false, toggle)
+setKey("C", "smoothGraph", false, toggle)
+setKey("D", "showDebugInfo", false, toggle)
+
+setKey("M", "activeMetricID", 1, function(_, setting) settings[setting] = nil end)
+setKey({1, 2, 3, 4, 5, 6, 7}, "activeMetricID", 1, function(key, setting) settings[setting] = tonumber(key) end)
+
+-- begin code
 local imgDir = (graphData.imgDir
 	and (graphData.imgDir:match("(gfx_1/.*/)[^/]*$") or graphData.imgDir:match("(gfx_2/.*/)[^/]*$"))
 	or "unknown")
 
-local metricHeight = 100
+local sizeFactor = gfx.getWidth() / 644
+
+local metricHeight = splitScreenRatio * gfx.getHeight()
 local headerHeight = metricHeight + 10
 
 local graphHeight = gfx.getHeight() - headerHeight
@@ -48,11 +76,6 @@ local pi = math.pi
 
 local nodeBaseRadius = 0
 local nodeRadiusFactor = 1
-
-hideUnreachedNodes = false
-hidePostBreakthrough = false
-logScale = false
-screenshotMode = false
 
 local dirRTL = not graphData.imgDir:match("(gfx_2/.*/)[^/]*$")
 
@@ -69,8 +92,8 @@ local function initColorScales()
 		{255, 30, 0},
 	}, tempMin, tempMax)
 	linkColorScale = colorScale.new({
-		draw.colorWithAlpha(screenshotMode and {0, 0, 0} or draw.Color.FG_YELLOW, 50),
-		draw.colorWithAlpha(screenshotMode and {0, 0, 0} or draw.Color.FG_YELLOW, 255),
+		draw.colorWithAlpha(settings.screenshotMode and {0, 0, 0} or draw.Color.FG_YELLOW, 50),
+		draw.colorWithAlpha(settings.screenshotMode and {0, 0, 0} or draw.Color.FG_YELLOW, 255),
 	}, 0, 70)
 end
 
@@ -246,7 +269,6 @@ pcall(function ()
 	end
 end)
 
-activeMetricID = 1
 local metrics = {}
 local metricData = {}
 
@@ -616,24 +638,24 @@ end
 initNodes()
 
 local function drawNode(node)
-	if (hideUnreachedNodes and node[1] > frameNum) then return end
+	if (settings.hideUnreachedNodes and node[1] > frameNum) then return end
 
-	local nodeRadius = node[12] * nodeRadiusFactor + nodeBaseRadius
+	local nodeRadius = node[12] * nodeRadiusFactor * math.sqrt(2) + nodeBaseRadius -- factor sqrt(2) to emulate previous (wrong) behavior w.r.t. size
 	-- Outline
 	local alpha = math.max(color.getA(node[11]), 50)
 	if node[1] == frameNum then
-		draw.circle(node[10], nodeRadius * 1.1 + 2, node[17], 30)
+		draw.circle(node[10], sizeFactor * (nodeRadius * 1.1 + 2), node[17], 30, settings.smoothGraph)
 		selNodeCount = selNodeCount + 1
 	end
-	draw.circle(node[10], nodeRadius + 1, color.rgba(0, 0, 0, alpha), 30)
-	draw.circle(node[10], nodeRadius, node[22], 30)
+	draw.circle(node[10], sizeFactor * (nodeRadius + 1), color.rgba(0, 0, 0, alpha), 30, settings.smoothGraph)
+	draw.circle(node[10], sizeFactor * nodeRadius, node[22], 30, settings.smoothGraph)
 
 	--draw.text {
 	--	font = draw.Font.SYSTEM,
 	--	text = node.label,
-	--	x = node.pos.x,
-	--	y = node.pos.y,
-	--	size = nodeRadius * 1.6,
+	--	x = sizeFactor * node.pos.x,
+	--	y = sizeFactor * node.pos.y,
+	--	size = sizeFactor * nodeRadius * 1.6,
 	--	fillColor = draw.Color.BLACK,
 	--	shadowColor = {255, 255, 255, 32},
 	--	outlineThickness = 0,
@@ -643,21 +665,20 @@ local function drawNode(node)
 end
 
 local function drawLink(link)
-	if (hideUnreachedNodes and link.time > frameNum) then return end
+	if (settings.hideUnreachedNodes and link.time > frameNum) then return end
 
-	draw.line(link.source[10], link.dest[10], color.hsv(0, 0.0, 0.6, 0.6), link.weight, 0)
+	local startWeight, endWeight = 1.5 * sizeFactor, 1.5 * sizeFactor
+
+	if not settings.unweightedLinks and posMapperIndex % #posMappers == 0 then
+		startWeight = sizeFactor * link.weight
+		endWeight = 0
+	end
+
+	draw.line(link.source[10], link.dest[10], color.hsv(0, 0.0, 0.6, 0.6), startWeight, endWeight, settings.smoothGraph)
 end
 
 local function formatTemperature(value)
 	return string.format("%d\004C", value)
-end
-
-local function drawColorScale()
-	local margin = 10
-	local size = vector2(120, 20)
-	local left = (graphWidth - graphHeight) / 2
-	local labels = {formatTemperature(tempMin), formatTemperature(tempMax)}
-	nodeColorScale.render(rect(left + margin, graphHeight - margin - size.y, size.x, size.y), 2, labels)
 end
 
 event.themeChanged.add("graph2", "colors", initColorScales)
@@ -676,12 +697,10 @@ local function getX(i)
 	return ((i - 1 - minRange * frameCnt) - 0.5) * graphWidth / frameCnt / range
 end
 
-metricFanciness = true
-
 local metY = 0
 
 local function drawMetricFancy(metData)
-	local lgs = logScale and math.log
+	local lgs = settings.logScale and math.log
 	local colWidth = graphWidth / frameCnt / range
 	local fMin = minRange * frameCnt
 	local height = metricHeight / (lgs and lgs(metData.maxRaw + 1) or metData.maxRaw)
@@ -712,7 +731,7 @@ local function drawMetricFancy(metData)
 end
 
 local function drawMetricUnfancy(metric, metData)
-	local lgs = logScale and math.log
+	local lgs = settings.logScale and math.log
 	local colWidth = graphWidth / frameCnt / range
 	local fMin = minRange * frameCnt
 	local height = metricHeight / (lgs and lgs(metData.max + 1) or metData.max)
@@ -735,11 +754,11 @@ local function drawMetricUnfancy(metric, metData)
 end
 
 local function drawMetricUnfancy2(metric, metData)
-	local lgs = logScale and math.log
+	local lgs = settings.logScale and math.log
 	local colWidth = graphWidth / frameCnt / range
 	local fMin = minRange * frameCnt
 	local height = metricHeight / (lgs and lgs(metData.max + 1) or metData.max)
-	local fillColor = color.hsv(metData.id * 0.3 + 0.5, (metData.id * 0.15 + 0.4) % 1, 1, activeMetricID and 0.8 or 0.5)
+	local fillColor = color.hsv(metData.id * 0.3 + 0.5, (metData.id * 0.15 + 0.4) % 1, 1, settings.activeMetricID and 0.8 or 0.5)
 	local breakColor = color.fade(fillColor, 0.7)
 	for i = 0, frameCnt do
 		local metVal = metric[i]
@@ -755,20 +774,20 @@ end
 
 local function drawMetric(metric, metData)
 	metY = metY + metricHeight + 5
-	if metricFanciness then
+	if settings.metricFanciness then
 		drawMetricFancy(metData)
 	elseif metData.raw and next(metData.raw) then
 		drawMetricUnfancy(metric, metData)
 	else
 		drawMetricUnfancy2(metric, metData)
 	end
-	if not screenshotMode then
+	if not settings.screenshotMode then
 		draw.text {
 			font = draw.Font.SYSTEM,
 			text = metData.name,
-			x = 20,
-			y = metData.id * 15,
-			size = 12,
+			x = sizeFactor * 20,
+			y = sizeFactor * metData.id * 15,
+			size = sizeFactor * 12,
 			fillColor = color.hsv(metData.id * 0.3 + 0.5, (metData.id * 0.15 + 0.4) % 1 * 0.5, 1, 1),
 			outlineColor = color.BLACK,
 			outlineThickness = 1,
@@ -779,10 +798,10 @@ local function drawMetric(metric, metData)
 end
 
 local function drawGraph()
-	for _, link in ipairs(hidePostBreakthrough and preBreakLinks or links) do
+	for _, link in ipairs(settings.hidePostBreakthrough and preBreakLinks or links) do
 		drawLink(link)
 	end
-	for _, i in ipairs(hidePostBreakthrough and preBreakNodes or liveNodes) do
+	for _, i in ipairs(settings.hidePostBreakthrough and preBreakNodes or liveNodes) do
 		drawNode(nodes[i])
 	end
 end
@@ -823,31 +842,7 @@ event.render.add("graph2", "vis", function ()
 		initNodes()
 	end
 
-	if input.keyPress("B") then
-		hidePostBreakthrough = not hidePostBreakthrough
-	end
-	if input.keyPress("N") then
-		hideUnreachedNodes = not hideUnreachedNodes
-	end
-	if input.keyPress("L") then
-		logScale = not logScale
-	end
-	if input.keyPress("F") then
-		metricFanciness = not metricFanciness
-	end
-	if input.keyPress("S") then
-		screenshotMode = not screenshotMode
-		initColorScales()
-	end
-	if input.keyPress("M") then
-		activeMetricID = nil
-	end
-
-	for i = 0, #metrics do
-		if input.keyPress(tostring(i)) then
-			activeMetricID = i
-		end
-	end
+	pressedKey() -- handle mouse keys
 
 	local colWidth = graphWidth / frameCnt / range
 	local mouseX = input.mouseX()
@@ -861,19 +856,19 @@ event.render.add("graph2", "vis", function ()
 		end
 	end
 
-	if screenshotMode then
+	if settings.screenshotMode then
 		gfx.drawBox({0, 0, gfx.getWidth(), gfx.getHeight()}, {255, 255, 255, 255})
 
-		if activeMetricID == nil then
+		if settings.activeMetricID == nil then
 			for i=1, #metrics do
 				drawMetric(metrics[i], metricData[i])
 			end
 			return
 		end
 
-		local activeMetric = metrics[activeMetricID]
+		local activeMetric = metrics[settings.activeMetricID]
 		if activeMetric then
-			return drawMetric(activeMetric, metricData[activeMetricID])
+			return drawMetric(activeMetric, metricData[settings.activeMetricID])
 		end
 
 		return drawGraph()
@@ -927,46 +922,31 @@ event.render.add("graph2", "vis", function ()
 				(bbox[3] - bbox[1]) / imgW * graphWidth,
 				(bbox[4] - bbox[2]) / imgH * graphHeight,
 			}
-			local margin = node[21] and 3 or 1
+			local margin = sizeFactor * (node[21] and 3 or 1)
 			gfx.drawBox({r[1] + margin, r[2], r[3] - margin * 2, margin}, col)
 			gfx.drawBox({r[1] + margin, r[2] + r[4] - margin, r[3] - margin * 2, margin}, col)
 			gfx.drawBox({r[1], r[2], margin, r[4]}, col)
 			gfx.drawBox({r[1] + r[3] - margin, r[2], margin, r[4]}, col)
 		end
 	end
-	--if extraInfo then
-	--	drawColorScale()
-	--end
 
-	if activeMetricID == nil then
+	if settings.activeMetricID == nil then
 		for i=1, #metrics do
 			drawMetric(metrics[i], metricData[i])
 		end
 	end
 
-	local activeMetric = metrics[activeMetricID]
+	local activeMetric = metrics[settings.activeMetricID]
 	if activeMetric then
-		drawMetric(activeMetric, metricData[activeMetricID])
-		--draw.text {
-		--	font = draw.Font.SYSTEM,
-		--	text = string.format("%.5g", activeMetric[frameNum + 1] or 0),
-		--	x = getX(frameNum) + 5,
-		--	y = 115,
-		--	size = 24,
-		--	fillColor = color.rgb(200, 200, 200),
-		--	outlineColor = color.BLACK,
-		--	outlineThickness = 1,
-		--	alignX = 0,
-		--	alignY = 0,
-		--}
+		drawMetric(activeMetric, metricData[settings.activeMetricID])
 	end
 	if graphName then
 		draw.text {
 			font = draw.Font.SYSTEM,
 			text = graphName,
-			x = gfx.getWidth() - 20,
-			y = 30,
-			size = 12,
+			x = gfx.getWidth() - sizeFactor * 20,
+			y = sizeFactor * 30,
+			size = sizeFactor * 12,
 			fillColor = color.rgb(255, 255, 255),
 			outlineColor = color.BLACK,
 			outlineThickness = 2,
@@ -975,16 +955,31 @@ event.render.add("graph2", "vis", function ()
 		}
 	end
 
+	draw.text {
+		font = draw.Font.SYSTEM,
+		text = "Frame: " .. frameNum + 1 .. " / " .. frameCnt,
+		x = gfx.getWidth() - sizeFactor - 20,
+		y = sizeFactor * 15,
+		size = sizeFactor * 12,
+		fillColor = color.rgb(100, 150, 255),
+		outlineColor = color.BLACK,
+		outlineThickness = 2,
+		alignX = 1,
+		alignY = 1,
+	}
+
+	if (settings.showDebugInfo) then
 		draw.text {
 			font = draw.Font.SYSTEM,
-			text = "Frame: " .. frameNum + 1 .. " / " .. frameCnt,
-			x = gfx.getWidth() - 20,
-			y = 15,
-			size = 12,
+			text = "Mouse: (" .. input.mouseX() .. ", " .. input.mouseY() .. ")",
+			x = gfx.getWidth() - sizeFactor - 20,
+			y = sizeFactor * 45,
+			size = sizeFactor * 12,
 			fillColor = color.rgb(100, 150, 255),
 			outlineColor = color.BLACK,
 			outlineThickness = 2,
 			alignX = 1,
 			alignY = 1,
 		}
+	end
 end)

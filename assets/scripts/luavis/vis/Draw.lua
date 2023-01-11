@@ -216,17 +216,41 @@ function draw.lineCapped(p1, p2, col, thickness, pointiness, arrow1, arrow2)
 end
 
 local function circlePoint(center, radius, fraction)
-	return vector2(radius):rotate(fraction) + center
+	return vector2(radius, 0):rotate(fraction) + center
 end
 
-function draw.circle(center, radius, col, segments)
-	segments = segments or 25
-	local multiplier = 2 * pi / segments
-	local v1 = circlePoint(center, radius, 0)
-	for i = 1, segments - 2 do
-		local v2 = circlePoint(center, radius, i * multiplier)
-		local v3 = circlePoint(center, radius, (i + 1) * multiplier)
-		drawTriangle(v1, v2, v3, col)
+function draw.circle(center, radius, col, segments, smooth)
+	smooth = smooth or false
+	if (not smooth) then
+		-- draw circle with the help of triangles
+		segments = segments or 25
+		local multiplier = 2 * pi / segments
+		local v1 = center
+		for i = 1, segments do
+			local v2 = circlePoint(center, radius, i * multiplier)
+			local v3 = circlePoint(center, radius, (i + 1) * multiplier)
+			drawTriangle(v1, v2, v3, col)
+		end
+	else
+		-- at the border, set single pixels for smoothing
+		local border = 2
+		local size = math.ceil(radius) + border
+		local smoothing_per_one = 1 / 2
+		local center_int = vector2(math.floor(center.x + 0.5), math.floor(center.y + 0.5))
+		for i = -size, size do
+			for j = -size, size do
+				local distance = math.sqrt((center_int.x + i - center.x)^2 + (center_int.y + j - center.y)^2)
+				--if (distance > radius) then
+					distance = distance - radius + border
+					if (distance < border) then
+						local alpha = math.min(1, math.max(0, 1 - smoothing_per_one * distance))
+						if (alpha > 0) then
+							gfx.drawVertex(center_int + vector2(i, j), color.setA(col, color.getA(col) * alpha))
+						end
+					end
+				--end
+			end
+		end
 	end
 end
 

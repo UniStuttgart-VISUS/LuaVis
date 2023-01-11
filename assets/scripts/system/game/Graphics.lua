@@ -213,6 +213,10 @@ function gfx.drawRect(rect, color)
 	writeTintedVertices()
 end
 
+function gfx.drawVertex(point, color)
+	gfx.drawBox({point.x - 0.5, point.y - 0.5, 1, 1}, color)
+end
+
 function gfx.drawTriangle(p1, p2, p3, color)
 	selectTexturePage(-1)
 	setTintedVertexPosition(0, p1.x, p1.y)
