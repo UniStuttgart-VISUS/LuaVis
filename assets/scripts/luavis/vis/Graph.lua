@@ -730,20 +730,56 @@ local function drawMetricFancy(metData)
 	end
 end
 
-local function drawMetricUnfancy(metric, metData)
+local function drawMetricUnfancyLog(raw, metric, metData)
 	local lgs = settings.logScale and math.log
 	local colWidth = graphWidth / frameCnt / range
 	local fMin = minRange * frameCnt
-	local height = metricHeight / (lgs and lgs(metData.max + 1) or metData.max)
+
+	local heights = {}
+	setmetatable(heights, {__index = function() return 0 end})
+ 
+	if raw then
+		for i = 1, #nodes do
+			local t = nodes[i][1]
+			heights[t] = heights[t] + raw[i]
+		end
+	else
+		for i = 0, frameCnt do
+			heights[i - 1] = metric[i]
+		end
+	end
+
+	local max = 0
+	for _, v in pairs(heights) do
+		max = math.max(max, v)
+	end
+
+	for k, v in pairs(heights) do
+		v = lgs(v + 1) * metricHeight / lgs(max + 1)
+
+		--local fillColor = color.hsv(metData.id * 0.3 + 0.5, (metData.id * 0.15 + 0.4) % 1, 0.5 + k * frameCnt, settings.activeMetricID and 0.8 or 0.5)
+		--local fillColor = color.hsv(4 * 0.3 + 0.5, (4 * 0.15 + 0.4) % 1, 0.5 + k * frameCnt, settings.activeMetricID and 0.8 or 0.5)
+		--local fillColor = color.hsv((metData.id * 0.3 + 0.5) % 1, (metData.id * 0.15 + 0.4) % 1, k / frameCnt, settings.activeMetricID and 0.8 or 0.5)
+		local fillColor = color.hsv((metData.id * 0.3 + 0.5) % 1, (metData.id * 0.15 + 0.4) % 1, 1, settings.activeMetricID and 0.8 or 0.5)
+
+		gfx.drawBox({offsetX + ((k - fMin) - 0.5) * colWidth, metY, colWidth, -v},
+			color.setA(fillColor, k > breakthrough and 180 or 220))
+	end
+end
+
+local function drawMetricUnfancy(metric, metData)
+	if settings.logScale then drawMetricUnfancyLog(metData.raw, nil, metData); return end
+
+	local colWidth = graphWidth / frameCnt / range
+	local fMin = minRange * frameCnt
 	local raw = metData.raw
+	local height = metricHeight / metData.max
 	local ys = {}
+
 	for i = 1, #nodes do
 		local metVal = raw[i]
 		if metVal then
 			local node = nodes[i]
-			if lgs then
-				metVal = lgs(metVal + 1)
-			end
 			local t = node[1]
 			local h = height * metVal
 			ys[t] = (ys[t] or (metY - height * (metric[t + 1] or 0))) + h
@@ -754,20 +790,19 @@ local function drawMetricUnfancy(metric, metData)
 end
 
 local function drawMetricUnfancy2(metric, metData)
-	local lgs = settings.logScale and math.log
+	if settings.logScale then drawMetricUnfancyLog(nil, metric, metData); return end
+
 	local colWidth = graphWidth / frameCnt / range
 	local fMin = minRange * frameCnt
-	local height = metricHeight / (lgs and lgs(metData.max + 1) or metData.max)
+	local height = metricHeight / metData.max
 	local fillColor = color.hsv(metData.id * 0.3 + 0.5, (metData.id * 0.15 + 0.4) % 1, 1, settings.activeMetricID and 0.8 or 0.5)
 	local breakColor = color.fade(fillColor, 0.7)
+	
 	for i = 0, frameCnt do
 		local metVal = metric[i]
 		if metVal then
-			if lgs then
-				metVal = lgs(metVal + 1)
-			end
 			gfx.drawBox({offsetX + ((i - 1 - fMin) - 0.5) * colWidth, metY - height * metVal, colWidth, metVal * height},
-				i > breakthrough + 1 and breakColor or fillColor)
+				color.setA(fillColor, i > breakthrough + 1 and 180 or 220))
 		end
 	end
 end
