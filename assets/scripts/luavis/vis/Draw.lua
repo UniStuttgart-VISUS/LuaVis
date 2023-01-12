@@ -2,7 +2,6 @@ local draw = {}
 
 local gfx = require "system.game.Graphics"
 local vector2 = require "system.utils.Vector2"
-local rect = require "system.utils.Rect"
 local color = require "system.utils.Color"
 local orderedSelector = require "system.events.OrderedSelector"
 

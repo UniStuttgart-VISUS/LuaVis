@@ -1,15 +1,14 @@
 ---@diagnostic disable: need-check-nil
-local draw = require "luavis.vis.Draw"
-local colorScale = require "luavis.vis.ColorScale"
-local vector2 = require "system.utils.Vector2"
-local rect = require "system.utils.Rect"
-local gfx = require "system.game.Graphics"
-local framebuffer = require "system.game.Framebuffer"
-local color = require "system.utils.Color"
-local input = require "system.game.Input"
-local utils = require "system.utils.Utilities"
 local fileIO = require "system.game.FileIO"
-local performance = require "system.debug.Performance"
+local framebuffer = require "system.game.Framebuffer"
+local gfx = require "system.game.Graphics"
+local input = require "system.game.Input"
+
+local color = require "system.utils.Color"
+local utils = require "system.utils.Utilities"
+local vector2 = require "system.utils.Vector2"
+
+local draw = require "luavis.vis.Draw"
 
 -- ----------------------------------------------------------
 -- Settings to change input dataset and layout.
