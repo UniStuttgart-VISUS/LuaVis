@@ -13,7 +13,7 @@ local draw = require "luavis.vis.Draw"
 -- ----------------------------------------------------------
 -- Settings to change input dataset and layout.
 -- ----------------------------------------------------------
-local graphData = require "luavis.vis.graphdata.GraphCa3M10"
+local graphData = require "luavis.vis.graphdata.GraphCa4M1"
 local splitScreenRatio = 100 / 540
 
 -- ----------------------------------------------------------
@@ -87,6 +87,8 @@ pcall(function ()
 	imgW = graphData.imgW
 	imgH = graphData.imgH
 end)
+
+local fb_id = "" .. imgW .. "x" .. imgH
 
 local breakthroughThreshold = 10
 pcall(function ()
@@ -767,31 +769,37 @@ end
 -- ----------------------------------------------------------
 -- Draw image for the current frame.
 -- ----------------------------------------------------------
-frameMemCache = {}
 frameBuffers = {}
 
 imgCacheDir = nil
 imgCache = {}
 
+local frameName = nil
+local numCacheEntries = 25
+
 local function drawImage()
 	local imgIndex = frameNum
-	local img = imgCache[imgIndex + 1]
+	local imgPath = imgCache[imgIndex + 1]
 
-	if img then
+	if imgPath then
 		-- Load image into framebuffer
-		local frameMemIndex = imgIndex % 25 + 1
-		if frameMemCache[frameMemIndex] ~= img then
-			frameMemCache[frameMemIndex] = img
-			local fb = frameBuffers[frameMemIndex]
-			if not fb or {fb.getSize()} ~= {imgW, imgH} then
-				fb = framebuffer.new(imgW, imgH)
-				frameBuffers[frameMemIndex] = fb
-			end
-			fb.load(img)
+		local frameMemIndex = imgIndex % numCacheEntries + 1
+
+		if frameBuffers[fb_id][frameMemIndex].name ~= imgPath then
+			frameBuffers[fb_id][frameMemIndex].name = imgPath
+			frameBuffers[fb_id][frameMemIndex].buffer.load(imgPath)
+		end
+
+		if settings.showDebugInfo then
+			local w, h = frameBuffers[fb_id][frameMemIndex].buffer.getSize()
+			frameName = frameBuffers[fb_id][frameMemIndex].name .. " - " .. frameBuffers[fb_id][frameMemIndex].buffer.id .. " - " .. w .. "x" .. h
+		else
+			frameName = nil
 		end
 
 		-- Draw image
-		local fb = frameBuffers[frameMemIndex]
+		local fb = frameBuffers[fb_id][frameMemIndex].buffer
+		if not fb.isValid() then error("Invalid framebuffer") end
 		if fb then
 			gfx.drawTintedSprite(fb.id, {offsetX, offsetY, graphWidth, graphHeight}, {0, 0, imgW, imgH}, {255,255,255,255})
 		end
@@ -891,10 +899,17 @@ event.render.add("graph2", "vis", function ()
 		table.sort(imgCache, function (name1, name2)
 			return nameSortCache[name1] < nameSortCache[name2]
 		end)
-		
+
 		frameNum = 0
 		frameCnt = #imgCache
-		
+
+		if frameBuffers[fb_id] == nil then
+			frameBuffers[fb_id] = {}
+			for i = 1, numCacheEntries do
+				frameBuffers[fb_id][i] = {name = nil, buffer = framebuffer.new(imgW, imgH)}
+			end
+		end
+
 		needsGraphReload = true
 	end
 	
@@ -947,7 +962,7 @@ event.render.add("graph2", "vis", function ()
 		draw.text {
 			font = draw.Font.SYSTEM,
 			text = "Frame: " .. frameNum + 1 .. " / " .. frameCnt,
-			x = gfx.getWidth() - sizeFactor - 20,
+			x = gfx.getWidth() - sizeFactor * 20,
 			y = sizeFactor * 15,
 			size = sizeFactor * 12,
 			fillColor = color.rgb(100, 150, 255),
@@ -957,21 +972,21 @@ event.render.add("graph2", "vis", function ()
 			alignY = 1,
 		}
 
-		local graphName
-		if pcall(function () graphName = graphData.graphName end) then
-			draw.text {
-				font = draw.Font.SYSTEM,
-				text = graphName,
-				x = gfx.getWidth() - sizeFactor * 20,
-				y = sizeFactor * 30,
-				size = sizeFactor * 12,
-				fillColor = color.rgb(255, 255, 255),
-				outlineColor = color.BLACK,
-				outlineThickness = 2,
-				alignX = 1,
-				alignY = 1,
-			}
-		end
+		local graphName = frameName
+		pcall(function () graphName = graphData.graphName end)
+
+		draw.text {
+			font = draw.Font.SYSTEM,
+			text = graphName,
+			x = gfx.getWidth() - sizeFactor * 20,
+			y = sizeFactor * 30,
+			size = sizeFactor * 12,
+			fillColor = color.rgb(255, 255, 255),
+			outlineColor = color.BLACK,
+			outlineThickness = 2,
+			alignX = 1,
+			alignY = 1,
+		}
 	end
 
 	-- Draw metric(s)
@@ -993,7 +1008,7 @@ event.render.add("graph2", "vis", function ()
 		draw.text {
 			font = draw.Font.SYSTEM,
 			text = "Mouse: (" .. input.mouseX() .. ", " .. input.mouseY() .. ")",
-			x = gfx.getWidth() - sizeFactor - 20,
+			x = gfx.getWidth() - sizeFactor * 20,
 			y = sizeFactor * 45,
 			size = sizeFactor * 12,
 			fillColor = color.rgb(100, 150, 255),
