@@ -14,7 +14,7 @@ local performance = require "system.debug.Performance"
 -- ----------------------------------------------------------
 -- Settings to change input dataset and layout.
 -- ----------------------------------------------------------
-local graphData = require "luavis.vis.graphdata.GraphCa4M02"
+local graphData = require "luavis.vis.graphdata.GraphCa3M10"
 local splitScreenRatio = 100 / 540
 
 -- ----------------------------------------------------------
@@ -784,7 +784,7 @@ local function drawImage()
 		if frameMemCache[frameMemIndex] ~= img then
 			frameMemCache[frameMemIndex] = img
 			local fb = frameBuffers[frameMemIndex]
-			if not fb then
+			if not fb or {fb.getSize()} ~= {imgW, imgH} then
 				fb = framebuffer.new(imgW, imgH)
 				frameBuffers[frameMemIndex] = fb
 			end
@@ -898,7 +898,7 @@ event.render.add("graph2", "vis", function ()
 		
 		needsGraphReload = true
 	end
-
+	
 	-- Handle keybord events to change settings
 	pressedKey()
 

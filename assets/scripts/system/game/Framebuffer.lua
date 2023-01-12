@@ -24,6 +24,10 @@ function framebuffer.new(width, height)
 		end
 	end
 
+	local function getSize()
+		return width, height
+	end
+
 	local functions = {
 		load = function (imageName)
 			initialize()
@@ -77,6 +81,8 @@ function framebuffer.new(width, height)
 			if key == "id" then
 				initialize()
 				return id
+			elseif key == "getSize" then
+				return getSize
 			elseif functions[key] then
 				return functions[key]
 			end
