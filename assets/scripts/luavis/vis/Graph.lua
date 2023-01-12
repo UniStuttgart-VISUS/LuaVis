@@ -884,7 +884,9 @@ event.render.add("graph2", "vis", function ()
 	if (mouseX < offsetX) then mouseX = offsetX end
 	if (mouseX > graphWidth + offsetX) then mouseX = graphWidth + offsetX end
 	local newFrame = math.min(frameCnt - 1, math.floor((mouseX - offsetX) / colWidth + 0.5 + frameCnt * minRange))
-	if input.mouseDown(1) then
+
+	if input.mouseDown(1) or (settings.hidePostBreakthrough and newFrame > breakthrough) then
+		if (settings.hidePostBreakthrough and newFrame > breakthrough) then newFrame = breakthrough end
 		if frameNum ~= newFrame then
 			frameNum = newFrame
 			initNodes()
