@@ -11,11 +11,15 @@ local utils = require "system.utils.Utilities"
 local fileIO = require "system.game.FileIO"
 local performance = require "system.debug.Performance"
 
--- settings
+-- ----------------------------------------------------------
+-- Settings to change input dataset and layout.
+-- ----------------------------------------------------------
 local graphData = require "luavis.vis.graphdata.GraphCa3M10"
 local splitScreenRatio = 100 / 540
 
--- keys
+-- ----------------------------------------------------------
+-- Set keyboard events and related settings.
+-- ----------------------------------------------------------
 local mouseKeys, settings = {}, {}
 
 local function setKey(keys, setting, default, func)
@@ -54,10 +58,14 @@ setKey("D", "showDebugInfo", false, toggle)
 setKey("M", "activeMetricID", 1, function(_, setting) settings[setting] = nil end)
 setKey({1, 2, 3, 4, 5, 6, 7}, "activeMetricID", 1, function(key, setting) settings[setting] = tonumber(key) end)
 
--- begin code
+-- ----------------------------------------------------------
+-- Parse input path and set layout.
+-- ----------------------------------------------------------
 local imgDir = (graphData.imgDir
 	and (graphData.imgDir:match("(gfx_1/.*/)[^/]*$") or graphData.imgDir:match("(gfx_2/.*/)[^/]*$"))
 	or "unknown")
+
+local rightToLeft = not graphData.imgDir:match("(gfx_2/.*/)[^/]*$")
 
 local sizeFactor = gfx.getWidth() / 644
 
@@ -69,36 +77,24 @@ local graphWidth = gfx.getWidth() - headerHeight * gfx.getWidth() / gfx.getHeigh
 local offsetX = (gfx.getWidth() - graphWidth) / 2
 local offsetY = headerHeight
 
-imgCacheDir = nil
-imgCache = {}
+frameCnt = 1
+frameNum = 1
 
-local pi = math.pi
+-- ----------------------------------------------------------
+-- Load image and graph information, and fix graph.
+-- ----------------------------------------------------------
+local imgW, imgH = 2448, 2050
+pcall(function ()
+	imgW = graphData.imgW
+	imgH = graphData.imgH
+end)
 
-local nodeBaseRadius = 0
-local nodeRadiusFactor = 1
+local breakthroughThreshold = 10
+pcall(function ()
+	breakthroughThreshold = graphData.btt
+end)
 
-local dirRTL = not graphData.imgDir:match("(gfx_2/.*/)[^/]*$")
-
-local nodeColorScale, linkColorScale
-
-local tempMin, tempMax = 0, 20
-
-local selNodeCount = 0
-
-local function initColorScales()
-	nodeColorScale = colorScale.new({
-		{0, 0, 255},
-		{255, 255, 255},
-		{255, 30, 0},
-	}, tempMin, tempMax)
-	linkColorScale = colorScale.new({
-		draw.colorWithAlpha(settings.screenshotMode and {0, 0, 0} or draw.Color.FG_YELLOW, 50),
-		draw.colorWithAlpha(settings.screenshotMode and {0, 0, 0} or draw.Color.FG_YELLOW, 255),
-	}, 0, 70)
-end
-
-initColorScales()
-
+--- @class Node
 --- @class N.Time
 --- @class N.Id
 --- @class N.X
@@ -122,7 +118,7 @@ initColorScales()
 --- @class N.Break
 --- @class N.Color2
 
---- @class Node
+--- @type Node[]
 --- @field [1] N.Time
 --- @field [2] N.Id
 --- @field [3] N.X
@@ -146,7 +142,6 @@ initColorScales()
 --- @field [21] N.Break
 --- @field [22] N.Color2
 
---- @type Node[]
 local nodes = utils.deepCopy(graphData.Nodes)
 local edges = utils.deepCopy(graphData.Edges)
 
@@ -215,8 +210,6 @@ if patchMissingLabels then
 			local parent = nodes[node[19]] or nodes[1]
 			node[3] = parent[3]
 			node[4] = parent[4]
-			--graphData.Rects[i*2-1] = graphData.Rects[parent[2]*2]
-			--graphData.Rects[i*2] = graphData.Rects[parent[2]*2+1]
 		end
 	end
 end
@@ -227,26 +220,6 @@ for i, node in ipairs(nodes) do
 	nodesByTime[node[1]] = nodesByTime[node[1]] or {}
 	table.insert(nodesByTime[node[1]], node)
 end
-
--- Old
-local imgW, imgH = 2448, 2050
-
--- Exp1
---local imgW, imgH = 2141, 1266
-
--- Exp2
---local imgW, imgH = 2171, 1271
-
-local breakthroughThreshold = 10
-
-pcall(function ()
-	imgW = graphData.imgW
-	imgH = graphData.imgH
-end)
-
-pcall(function ()
-	breakthroughThreshold = graphData.btt
-end)
 
 local function traceMainChannel(node)
 	if node then
@@ -259,7 +232,7 @@ pcall(function ()
 	local rects = graphData.Rects
 	if rects then
 		for i, r in ipairs(rects) do
-			local x = dirRTL and r[1] or imgW - r[3]
+			local x = rightToLeft and r[1] or imgW - r[3]
 			if x < breakthroughThreshold then
 				breakthrough = nodes[i][1]
 				traceMainChannel(nodes[i])
@@ -269,6 +242,41 @@ pcall(function ()
 	end
 end)
 
+local liveNodes = {}
+local preBreakNodes = {}
+
+for i = 1, #nodes do
+	local node = nodes[i]
+	if (node[8] == 1 and node[9] <= 1) or graphData.Rects[i][1] == 0 then
+		node[16] = i
+	else
+		liveNodes[#liveNodes + 1] = i
+		if node[1] <= breakthrough then
+			preBreakNodes[#preBreakNodes + 1] = i
+		end
+	end
+end
+
+local simplify = true
+if simplify then
+	for i = #edges - 1, 1, -2 do
+		local n1, n2 = nodes[edges[i] + 1], nodes[edges[i + 1] + 1]
+		if n1[16] then
+			--n1[16] = n2[16] or n2[2] + 1
+		end
+	end
+
+	for i = 1, #nodes do
+		local node = nodes[i]
+		if node[16] == i then
+			node[16] = nil
+		end
+	end
+end
+
+-- ----------------------------------------------------------
+-- Create metrics based on graph information.
+-- ----------------------------------------------------------
 local metrics = {}
 local metricData = {}
 
@@ -382,38 +390,6 @@ do
 	makeMetric("Main Channel Area Ratio", ratio)
 end
 
-local liveNodes = {}
-local preBreakNodes = {}
-
-for i = 1, #nodes do
-	local node = nodes[i]
-	if (node[8] == 1 and node[9] <= 1) or graphData.Rects[i][1] == 0 then
-		node[16] = i
-	else
-		liveNodes[#liveNodes + 1] = i
-		if node[1] <= breakthrough then
-			preBreakNodes[#preBreakNodes + 1] = i
-		end
-	end
-end
-
-local simplify = true
-if simplify then
-	for i = #edges - 1, 1, -2 do
-		local n1, n2 = nodes[edges[i] + 1], nodes[edges[i + 1] + 1]
-		if n1[16] then
-			--n1[16] = n2[16] or n2[2] + 1
-		end
-	end
-
-	for i = 1, #nodes do
-		local node = nodes[i]
-		if node[16] == i then
-			node[16] = nil
-		end
-	end
-end
-
 local minRange = graphData.minRange
 local maxRange = graphData.maxRange
 
@@ -421,53 +397,81 @@ if true then
 	minRange, maxRange = 0, 1
 end
 
-if dirRTL then
+if rightToLeft then
 	minRange, maxRange = maxRange, minRange
 end
 
 local range = maxRange - minRange
 
-frameCnt = 1
-frameNum = 1
-
+-- ----------------------------------------------------------
+-- Node mappers hold information for graph layouts.
+-- ----------------------------------------------------------
 local maxTimestampHeight = 1
-local timestampHeight = {}
-local filledSlots = {}
 
-local posMappers = {
-	function (node)
-		return vector2(node[3] / imgW, node[4] / imgH)
-	end,
-	function (node)
-		local y = (node[15] or node[14]) / maxTimestampHeight / 3 + 0.5
-		return vector2((node[1] / frameCnt - minRange) / range, y + 0.01)
-	end,
-	function (node)
-		local y = node[14] / 40 + 0.5
-		return vector2((node[1] / frameCnt - minRange) / range, y + 0.01)
-	end,
-	function (node)
-		return vector2((node[1] / frameCnt - minRange) / range, node[4] / imgH)
-	end,
+local nodeMappers = {
+	{
+		posMapper =
+			function (node)
+				return vector2(node[3] / imgW, node[4] / imgH)
+			end,
+		radMapper =
+			function ()
+				return 2, 0.5 * math.sqrt(2)
+			end,
+	},
+	{
+		posMapper =
+			function (node)
+				local y = (node[15] or node[14]) / maxTimestampHeight / 3 + 0.5
+				return vector2((node[1] / frameCnt - minRange) / range, y + 0.01)
+			end,
+		radMapper =
+			function ()
+				return 2, 0.1 * math.sqrt(2)
+			end,
+	},
+	{
+		posMapper =
+			function (node)
+				local y = node[14] / 40 + 0.5
+				return vector2((node[1] / frameCnt - minRange) / range, y + 0.01)
+			end,
+		radMapper =
+			function ()
+				return 3, 0.1 * math.sqrt(2)
+			end,
+	},
+	{
+		posMapper =
+			function (node)
+				return vector2((node[1] / frameCnt - minRange) / range, node[4] / imgH)
+			end,
+		radMapper =
+			function ()
+				return 1.5, 0.2 * math.sqrt(2)
+			end,
+	},
 }
-local radMappers = {
-	function ()
-		return 2, 0.5
-		--return 4, 0
-	end,
-	function ()
-		return 2, 0.1
-	end,
-	function ()
-		return 3, 0.1
-	end,
-	function ()
-		return 1.5, 0.2
-	end,
-}
-posMapperIndex = 0
-posMapperTargetIndex = 0
 
+nodeMapperIndex = 0
+nodeMapperTargetIndex = 0
+
+local function getPosMapper(index)
+	if index ~= math.floor(index) then
+		local map1 = nodeMappers[math.floor(index) % #nodeMappers + 1].posMapper
+		local map2 = nodeMappers[math.ceil(index) % #nodeMappers + 1].posMapper
+		local fac = index - math.floor(index)
+		return function (node)
+			return map1(node) * (1 - fac) + map2(node) * fac
+		end
+	else
+		return nodeMappers[index % #nodeMappers + 1].posMapper
+	end
+end
+
+-- ----------------------------------------------------------
+-- Initialize the graph.
+-- ----------------------------------------------------------
 local nodeColorSplit = color.fromTable {100, 255, 255}
 local nodeColorMerge = color.fromTable {255, 160, 100}
 local nodeColorBegin = color.fromTable {60, 255, 60}
@@ -475,21 +479,11 @@ local nodeColorEnd   = color.fromTable {255, 60, 60}
 local nodeColorMulti = color.fromTable {200, 100, 200}
 local nodeColorInvis = color.TRANSPARENT
 
+local nodeBaseRadius = 0
+local nodeRadiusFactor = 1
+
 local links
 local preBreakLinks
-
-local function getPosMapper(index)
-	if index ~= math.floor(index) then
-		local map1 = posMappers[math.floor(index) % #posMappers + 1]
-		local map2 = posMappers[math.ceil(index) % #posMappers + 1]
-		local fac = index - math.floor(index)
-		return function (node)
-			return map1(node) * (1 - fac) + map2(node) * fac
-		end
-	else
-		return posMappers[index % #posMappers + 1]
-	end
-end
 
 local function getNodeTypeColor(node)
 	local nIn, nOut = node[8], node[9]
@@ -511,16 +505,27 @@ local function getNodeTypeColor(node)
 	end
 end
 
-local function initNodes()
+local function initGraph()
 	local t
 	local y = 0
 
-	local posMapper = getPosMapper(posMapperIndex)
+	local radMapper = nodeMappers[(nodeMapperTargetIndex) % #nodeMappers + 1].radMapper
+	if radMapper then
+		nodeBaseRadius, nodeRadiusFactor = radMapper()
+	end
+	
+	if math.abs(nodeMapperIndex - nodeMapperTargetIndex) > 0.001 then
+		nodeMapperIndex = utils.lerp(nodeMapperIndex, nodeMapperTargetIndex, 0.25)
+	else
+		nodeMapperIndex = nodeMapperTargetIndex
+	end
+
+	local posMapper = getPosMapper(nodeMapperIndex)
 
 	local wSize = vector2(graphWidth, graphHeight)
 
-	timestampHeight = {}
-	filledSlots = {}
+	local timestampHeight = {}
+	local filledSlots = {}
 
 	for i = 1, #nodes do
 		local node = nodes[i]
@@ -591,21 +596,10 @@ local function initNodes()
 	for i = 1, #nodes do
 		local node = nodes[i]
 
-		--node.index = nodeOrder[node.label]
-		--node.pos = vector2(screenCenter.y - nodeBaseRadius * 2, 0):rotate((1 - node.index) / #nodes * 2 * pi) + screenCenter
-
-		--node[10] = vector2(node[3], node[4]) / vector2(2448, 2050) * vector2(gfx.getSize())
-		--node[10] = vector2((node[1] / frameCnt - minRange) / range, y / 40 + 0.01) * vector2(gfx.getSize())
-		--node[10] = vector2((node[1] / frameCnt - minRange) / range, node[4] / 2050) * vector2(gfx.getSize())
 		node[10] = vector2(offsetX, offsetY) + posMapper(node) * wSize
 
-
 		local col = utils.clamp(0, (node[1] - frameNum) + 0.5, 1)
-		--local col = 0
-		--local a = utils.clamp(0, 255 * (1 - math.abs(node[1] - frameNum) / 1.5), 255)
-		--local a = (node[1] == frameNum) and 255 or 0
 		local a = col % 1 * 0.5 + 0.75
-		--node[11] = (node[8] == 1 and node[9] == 1) and color.TRANSPARENT or color.rgba(150, col * 255, 128 + (col % 1) * 128, a)
 
 		node[11] = color.fade(getNodeTypeColor(node), a)
 		node[12] = 2 + utils.clamp(0, math.sqrt(node[7]) / 16, 8)
@@ -628,76 +622,14 @@ local function initNodes()
 			end
 		end
 	end
-
-	local radMapper = radMappers[(posMapperTargetIndex) % #radMappers + 1]
-	if radMapper then
-		nodeBaseRadius, nodeRadiusFactor = radMapper()
-	end
 end
 
-initNodes()
+initGraph()
 
-local function drawNode(node)
-	if (settings.hideUnreachedNodes and node[1] > frameNum) then return end
-
-	local nodeRadius = node[12] * nodeRadiusFactor * math.sqrt(2) + nodeBaseRadius -- factor sqrt(2) to emulate previous (wrong) behavior w.r.t. size
-	-- Outline
-	local alpha = math.max(color.getA(node[11]), 50)
-	if node[1] == frameNum then
-		draw.circle(node[10], sizeFactor * (nodeRadius * 1.1 + 2), node[17], 30, settings.smoothGraph)
-		selNodeCount = selNodeCount + 1
-	end
-	draw.circle(node[10], sizeFactor * (nodeRadius + 1), color.rgba(0, 0, 0, alpha), 30, settings.smoothGraph)
-	draw.circle(node[10], sizeFactor * nodeRadius, node[22], 30, settings.smoothGraph)
-
-	--draw.text {
-	--	font = draw.Font.SYSTEM,
-	--	text = node.label,
-	--	x = sizeFactor * node.pos.x,
-	--	y = sizeFactor * node.pos.y,
-	--	size = sizeFactor * nodeRadius * 1.6,
-	--	fillColor = draw.Color.BLACK,
-	--	shadowColor = {255, 255, 255, 32},
-	--	outlineThickness = 0,
-	--	alignX = 0.5,
-	--	alignY = 0.5,
-	--}
-end
-
-local function drawLink(link)
-	if (settings.hideUnreachedNodes and link.time > frameNum) then return end
-
-	local startWeight, endWeight = 1.5 * sizeFactor, 1.5 * sizeFactor
-
-	if not settings.unweightedLinks and posMapperIndex % #posMappers == 0 then
-		startWeight = sizeFactor * link.weight
-		endWeight = 0
-	end
-
-	draw.line(link.source[10], link.dest[10], color.hsv(0, 0.0, 0.6, 0.6), startWeight, endWeight, settings.smoothGraph)
-end
-
-local function formatTemperature(value)
-	return string.format("%d\004C", value)
-end
-
-event.themeChanged.add("graph2", "colors", initColorScales)
-
-local frameGrid, graphName
-pcall(function ()
-	--frameGrid = graphData.frameGrid
-	graphName = graphData.graphName
-end)
-
-frameMemCache = {}
-frameBuffers = {}
-fbSize = nil
-
-local function getX(i)
-	return ((i - 1 - minRange * frameCnt) - 0.5) * graphWidth / frameCnt / range
-end
-
-local metY = 0
+-- ----------------------------------------------------------
+-- Draw selected or all metric(s).
+-- ----------------------------------------------------------
+local metricYOffset = 0
 
 local function drawMetricFancy(metData)
 	local lgs = settings.logScale and math.log
@@ -721,7 +653,7 @@ local function drawMetricFancy(metData)
 				t = nodes[i][1]
 				ys = {}
 			end
-			local y = metY - height * metVal
+			local y = metricYOffset - height * metVal
 			local intensity = (ys[floor(y)] or 5) + 1
 			ys[floor(y)] = intensity
 			gfx.drawBox({offsetX + ((t - fMin) - 0.5) * colWidth, y, colWidth, 1},
@@ -757,12 +689,13 @@ local function drawMetricUnfancyLog(raw, metric, metData)
 	for k, v in pairs(heights) do
 		v = lgs(v + 1) * metricHeight / lgs(max + 1)
 
+		-- Different color styles
 		--local fillColor = color.hsv(metData.id * 0.3 + 0.5, (metData.id * 0.15 + 0.4) % 1, 0.5 + k * frameCnt, settings.activeMetricID and 0.8 or 0.5)
 		--local fillColor = color.hsv(4 * 0.3 + 0.5, (4 * 0.15 + 0.4) % 1, 0.5 + k * frameCnt, settings.activeMetricID and 0.8 or 0.5)
 		--local fillColor = color.hsv((metData.id * 0.3 + 0.5) % 1, (metData.id * 0.15 + 0.4) % 1, k / frameCnt, settings.activeMetricID and 0.8 or 0.5)
 		local fillColor = color.hsv((metData.id * 0.3 + 0.5) % 1, (metData.id * 0.15 + 0.4) % 1, 1, settings.activeMetricID and 0.8 or 0.5)
 
-		gfx.drawBox({offsetX + ((k - fMin) - 0.5) * colWidth, metY, colWidth, -v},
+		gfx.drawBox({offsetX + ((k - fMin) - 0.5) * colWidth, metricYOffset, colWidth, -v},
 			color.setA(fillColor, k > breakthrough and 180 or 220))
 	end
 end
@@ -782,7 +715,7 @@ local function drawMetricUnfancy(metric, metData)
 			local node = nodes[i]
 			local t = node[1]
 			local h = height * metVal
-			ys[t] = (ys[t] or (metY - height * (metric[t + 1] or 0))) + h
+			ys[t] = (ys[t] or (metricYOffset - height * (metric[t + 1] or 0))) + h
 			gfx.drawBox({offsetX + ((t - fMin) - 0.5) * colWidth, ys[t] - h, colWidth, h},
 				color.setA(node[17] or -1, t > breakthrough and 180 or 220))
 		end
@@ -801,14 +734,14 @@ local function drawMetricUnfancy2(metric, metData)
 	for i = 0, frameCnt do
 		local metVal = metric[i]
 		if metVal then
-			gfx.drawBox({offsetX + ((i - 1 - fMin) - 0.5) * colWidth, metY - height * metVal, colWidth, metVal * height},
+			gfx.drawBox({offsetX + ((i - 1 - fMin) - 0.5) * colWidth, metricYOffset - height * metVal, colWidth, metVal * height},
 				color.setA(fillColor, i > breakthrough + 1 and 180 or 220))
 		end
 	end
 end
 
 local function drawMetric(metric, metData)
-	metY = metY + metricHeight + 5
+	metricYOffset = metricYOffset + metricHeight + 5
 	if settings.metricFanciness then
 		drawMetricFancy(metData)
 	elseif metData.raw and next(metData.raw) then
@@ -832,99 +765,21 @@ local function drawMetric(metric, metData)
 	end
 end
 
-local function drawGraph()
-	for _, link in ipairs(settings.hidePostBreakthrough and preBreakLinks or links) do
-		drawLink(link)
-	end
-	for _, i in ipairs(settings.hidePostBreakthrough and preBreakNodes or liveNodes) do
-		drawNode(nodes[i])
-	end
-end
+-- ----------------------------------------------------------
+-- Draw image for the current frame.
+-- ----------------------------------------------------------
+frameMemCache = {}
+frameBuffers = {}
 
-event.render.add("graph2", "vis", function ()
-	metY = 0
-	selNodeCount = 0
-	if input.scrollY() < 0 then
-		posMapperTargetIndex = posMapperTargetIndex + 1
-	elseif input.scrollY() > 0 then
-		posMapperTargetIndex = posMapperTargetIndex - 1
-	end
+imgCacheDir = nil
+imgCache = {}
 
-	if posMapperIndex ~= posMapperTargetIndex then
-		if math.abs(posMapperIndex - posMapperTargetIndex) > 0.001 then
-			posMapperIndex = utils.lerp(posMapperIndex, posMapperTargetIndex, 0.25)
-		else
-			posMapperIndex = posMapperTargetIndex
-		end
-		initNodes()
-	end
-
-	if imgCacheDir ~= imgDir then
-		imgCacheDir = imgDir
-		imgCache = fileIO.listFiles(imgDir, fileIO.List.FILES, fileIO.List.RECURSIVE, fileIO.List.FULL_PATH)
-		local nameSortCache = {}
-		local function padNum(n)
-			return string.rep("0", 5 - #n) .. n
-		end
-		for _, name in ipairs(imgCache) do
-			nameSortCache[name] = name:gsub("%d+", padNum)
-		end
-		table.sort(imgCache, function (name1, name2)
-			return nameSortCache[name1] < nameSortCache[name2]
-		end)
-		frameNum = 0
-		frameCnt = #imgCache
-		initNodes()
-	end
-
-	pressedKey() -- handle mouse keys
-
-	local colWidth = graphWidth / frameCnt / range
-	local mouseX = input.mouseX()
-	if (mouseX < offsetX) then mouseX = offsetX end
-	if (mouseX > graphWidth + offsetX) then mouseX = graphWidth + offsetX end
-	local newFrame = math.min(frameCnt - 1, math.floor((mouseX - offsetX) / colWidth + 0.5 + frameCnt * minRange))
-
-	if input.mouseDown(1) or (settings.hidePostBreakthrough and newFrame > breakthrough) then
-		if (settings.hidePostBreakthrough and newFrame > breakthrough) then newFrame = breakthrough end
-		if frameNum ~= newFrame then
-			frameNum = newFrame
-			initNodes()
-		end
-	end
-
-	if settings.screenshotMode then
-		gfx.drawBox({0, 0, gfx.getWidth(), gfx.getHeight()}, {255, 255, 255, 255})
-
-		if settings.activeMetricID == nil then
-			for i=1, #metrics do
-				drawMetric(metrics[i], metricData[i])
-			end
-			return
-		end
-
-		local activeMetric = metrics[settings.activeMetricID]
-		if activeMetric then
-			return drawMetric(activeMetric, metricData[settings.activeMetricID])
-		end
-
-		return drawGraph()
-	end
-
+local function drawImage()
 	local imgIndex = frameNum
-	if frameGrid then
-		imgIndex = math.floor(imgIndex / frameGrid + 0.5) * frameGrid
-	end
 	local img = imgCache[imgIndex + 1]
-	if img then
-		--local fbsz = imgW + (65536 * imgH)
-		--if fbSize ~= fbsz then
-		--	frameBuffers = {}
-		--	frameMemCache = {}
-		--	fbSize = fbsz
-		--end
 
-		-- Expunge old image from cache
+	if img then
+		-- Load image into framebuffer
 		local frameMemIndex = imgIndex % 25 + 1
 		if frameMemCache[frameMemIndex] ~= img then
 			frameMemCache[frameMemIndex] = img
@@ -936,19 +791,66 @@ event.render.add("graph2", "vis", function ()
 			fb.load(img)
 		end
 
-		--local w, h = gfx.getImageSize(frameBuffers)
-		gfx.drawBox({0, 0, graphWidth, graphHeight}, {32,32,32,255})
+		-- Draw image
 		local fb = frameBuffers[frameMemIndex]
 		if fb then
-			--gfx.drawTintedSprite(fb.id, {0, 0, gfx.getSize()}, {0, 0, imgW, imgH}, {255,255,255,64})
 			gfx.drawTintedSprite(fb.id, {offsetX, offsetY, graphWidth, graphHeight}, {0, 0, imgW, imgH}, {255,255,255,255})
 		end
 	end
-	--gfx.drawBox({((frameNum - minRange * frameCnt) - 0.5) * colWidth, 0, colWidth, (graphHeight)}, {0, 0, 100, 64})
-	gfx.drawBox({offsetX + ((frameNum - minRange * frameCnt) - 0.5) * colWidth, 0, colWidth, metricHeight + 10}, {255, 255, 255, 255})
+end
 
-	drawGraph()
+-- ----------------------------------------------------------
+-- Draw graph and interfaces according to user's settings.
+-- ----------------------------------------------------------
+local function drawNode(node)
+	if (settings.hideUnreachedNodes and node[1] > frameNum) then return end
 
+	local nodeRadius = node[12] * nodeRadiusFactor + nodeBaseRadius
+	-- Outline
+	local alpha = math.max(color.getA(node[11]), 50)
+	if node[1] == frameNum then
+		draw.circle(node[10], sizeFactor * (nodeRadius * 1.1 + 2), node[17], 30, settings.smoothGraph)
+	end
+	draw.circle(node[10], sizeFactor * (nodeRadius + 1), color.rgba(0, 0, 0, alpha), 30, settings.smoothGraph)
+	draw.circle(node[10], sizeFactor * nodeRadius, node[22], 30, settings.smoothGraph)
+
+	--draw.text {
+	--	font = draw.Font.SYSTEM,
+	--	text = node.label,
+	--	x = sizeFactor * node.pos.x,
+	--	y = sizeFactor * node.pos.y,
+	--	size = sizeFactor * nodeRadius * 1.6,
+	--	fillColor = draw.Color.BLACK,
+	--	shadowColor = {255, 255, 255, 32},
+	--	outlineThickness = 0,
+	--	alignX = 0.5,
+	--	alignY = 0.5,
+	--}
+end
+
+local function drawLink(link)
+	if (settings.hideUnreachedNodes and link.time > frameNum) then return end
+
+	local startWeight, endWeight = 1.5 * sizeFactor, 1.5 * sizeFactor
+
+	if not settings.unweightedLinks and nodeMapperIndex % #nodeMappers == 0 then
+		startWeight = sizeFactor * link.weight
+		endWeight = 0
+	end
+
+	draw.line(link.source[10], link.dest[10], color.hsv(0, 0.0, 0.6, 0.6), startWeight, endWeight, settings.smoothGraph)
+end
+
+local function drawGraph()
+	for _, link in ipairs(settings.hidePostBreakthrough and preBreakLinks or links) do
+		drawLink(link)
+	end
+	for _, i in ipairs(settings.hidePostBreakthrough and preBreakNodes or liveNodes) do
+		drawNode(nodes[i])
+	end
+end
+
+local function drawActiveInterfaces()
 	for _, node in ipairs(nodesByTime[frameNum] or {}) do
 		local bbox = graphData.Rects and graphData.Rects[node[2] + 1]
 		if bbox then
@@ -966,6 +868,115 @@ event.render.add("graph2", "vis", function ()
 			gfx.drawBox({r[1] + r[3] - margin, r[2], margin, r[4]}, col)
 		end
 	end
+end
+
+-- ----------------------------------------------------------
+-- Register render callback for actual rendering.
+-- ----------------------------------------------------------
+event.render.add("graph2", "vis", function ()
+	local needsGraphReload = false
+
+	-- Create image cache when input path changed
+	if imgCacheDir ~= imgDir then
+		imgCacheDir = imgDir
+		imgCache = fileIO.listFiles(imgDir, fileIO.List.FILES, fileIO.List.RECURSIVE, fileIO.List.FULL_PATH)
+
+		local nameSortCache = {}
+		local function padNum(n)
+			return string.rep("0", 5 - #n) .. n
+		end
+		for _, name in ipairs(imgCache) do
+			nameSortCache[name] = name:gsub("%d+", padNum)
+		end
+
+		table.sort(imgCache, function (name1, name2)
+			return nameSortCache[name1] < nameSortCache[name2]
+		end)
+		
+		frameNum = 0
+		frameCnt = #imgCache
+		
+		needsGraphReload = true
+	end
+
+	-- Handle keybord events to change settings
+	pressedKey()
+
+	-- Scrolling will change the graph layout
+	if input.scrollY() < 0 then
+		nodeMapperTargetIndex = nodeMapperTargetIndex + 1
+	elseif input.scrollY() > 0 then
+		nodeMapperTargetIndex = nodeMapperTargetIndex - 1
+	end
+
+	if nodeMapperIndex ~= nodeMapperTargetIndex then
+		needsGraphReload = true
+	end
+
+	-- Handle mouse click events that will change the selected frame
+	local colWidth = graphWidth / frameCnt / range
+	local mouseX = input.mouseX()
+	if (mouseX < offsetX) then mouseX = offsetX end
+	if (mouseX > graphWidth + offsetX) then mouseX = graphWidth + offsetX end
+	local newFrame = math.min(frameCnt - 1, math.floor((mouseX - offsetX) / colWidth + 0.5 + frameCnt * minRange))
+
+	if input.mouseDown(1) or (settings.hidePostBreakthrough and newFrame > breakthrough) then
+		if (settings.hidePostBreakthrough and newFrame > breakthrough) then newFrame = breakthrough end
+		if frameNum ~= newFrame then
+			frameNum = newFrame
+
+			needsGraphReload = true
+		end
+	end
+
+	-- Initialize graph if necessary
+	if needsGraphReload then initGraph() end
+
+	-- Draw everything
+	if settings.screenshotMode then
+		gfx.drawBox({0, 0, gfx.getWidth(), gfx.getHeight()}, {255, 255, 255, 255})
+	end
+
+	drawImage()
+	drawGraph()
+	drawActiveInterfaces()
+
+	-- Draw frame and graph information
+	if not settings.screenshotMode then
+		gfx.drawBox({offsetX + ((frameNum - minRange * frameCnt) - 0.5) * colWidth, 0, colWidth, metricHeight + 10}, {255, 255, 255, 255})
+
+		draw.text {
+			font = draw.Font.SYSTEM,
+			text = "Frame: " .. frameNum + 1 .. " / " .. frameCnt,
+			x = gfx.getWidth() - sizeFactor - 20,
+			y = sizeFactor * 15,
+			size = sizeFactor * 12,
+			fillColor = color.rgb(100, 150, 255),
+			outlineColor = color.BLACK,
+			outlineThickness = 2,
+			alignX = 1,
+			alignY = 1,
+		}
+
+		local graphName
+		if pcall(function () graphName = graphData.graphName end) then
+			draw.text {
+				font = draw.Font.SYSTEM,
+				text = graphName,
+				x = gfx.getWidth() - sizeFactor * 20,
+				y = sizeFactor * 30,
+				size = sizeFactor * 12,
+				fillColor = color.rgb(255, 255, 255),
+				outlineColor = color.BLACK,
+				outlineThickness = 2,
+				alignX = 1,
+				alignY = 1,
+			}
+		end
+	end
+
+	-- Draw metric(s)
+	metricYOffset = 0
 
 	if settings.activeMetricID == nil then
 		for i=1, #metrics do
@@ -977,35 +988,9 @@ event.render.add("graph2", "vis", function ()
 	if activeMetric then
 		drawMetric(activeMetric, metricData[settings.activeMetricID])
 	end
-	if graphName then
-		draw.text {
-			font = draw.Font.SYSTEM,
-			text = graphName,
-			x = gfx.getWidth() - sizeFactor * 20,
-			y = sizeFactor * 30,
-			size = sizeFactor * 12,
-			fillColor = color.rgb(255, 255, 255),
-			outlineColor = color.BLACK,
-			outlineThickness = 2,
-			alignX = 1,
-			alignY = 1,
-		}
-	end
 
-	draw.text {
-		font = draw.Font.SYSTEM,
-		text = "Frame: " .. frameNum + 1 .. " / " .. frameCnt,
-		x = gfx.getWidth() - sizeFactor - 20,
-		y = sizeFactor * 15,
-		size = sizeFactor * 12,
-		fillColor = color.rgb(100, 150, 255),
-		outlineColor = color.BLACK,
-		outlineThickness = 2,
-		alignX = 1,
-		alignY = 1,
-	}
-
-	if (settings.showDebugInfo) then
+	-- Debug output
+	if settings.showDebugInfo and not settings.screenshotMode then
 		draw.text {
 			font = draw.Font.SYSTEM,
 			text = "Mouse: (" .. input.mouseX() .. ", " .. input.mouseY() .. ")",
