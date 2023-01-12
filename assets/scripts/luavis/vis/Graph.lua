@@ -14,7 +14,7 @@ local performance = require "system.debug.Performance"
 -- ----------------------------------------------------------
 -- Settings to change input dataset and layout.
 -- ----------------------------------------------------------
-local graphData = require "luavis.vis.graphdata.GraphCa3M10"
+local graphData = require "luavis.vis.graphdata.GraphCa4M02"
 local splitScreenRatio = 100 / 540
 
 -- ----------------------------------------------------------
@@ -656,7 +656,7 @@ local function drawMetricFancy(metData)
 			local y = metricYOffset - height * metVal
 			local intensity = (ys[floor(y)] or 5) + 1
 			ys[floor(y)] = intensity
-			gfx.drawBox({offsetX + ((t - fMin) - 0.5) * colWidth, y, colWidth, 1},
+			gfx.drawBox({offsetX + (t - fMin) * colWidth, y, colWidth, 1},
 				color.setA(t > breakthrough and breakColor or fillColor, min(255, intensity * 10) ))
 		end
 	end
@@ -695,7 +695,7 @@ local function drawMetricUnfancyLog(raw, metric, metData)
 		--local fillColor = color.hsv((metData.id * 0.3 + 0.5) % 1, (metData.id * 0.15 + 0.4) % 1, k / frameCnt, settings.activeMetricID and 0.8 or 0.5)
 		local fillColor = color.hsv((metData.id * 0.3 + 0.5) % 1, (metData.id * 0.15 + 0.4) % 1, 1, settings.activeMetricID and 0.8 or 0.5)
 
-		gfx.drawBox({offsetX + ((k - fMin) - 0.5) * colWidth, metricYOffset, colWidth, -v},
+		gfx.drawBox({offsetX + (k - fMin) * colWidth, metricYOffset, colWidth, -v},
 			color.setA(fillColor, k > breakthrough and 180 or 220))
 	end
 end
@@ -716,7 +716,7 @@ local function drawMetricUnfancy(metric, metData)
 			local t = node[1]
 			local h = height * metVal
 			ys[t] = (ys[t] or (metricYOffset - height * (metric[t + 1] or 0))) + h
-			gfx.drawBox({offsetX + ((t - fMin) - 0.5) * colWidth, ys[t] - h, colWidth, h},
+			gfx.drawBox({offsetX + (t - fMin) * colWidth, ys[t] - h, colWidth, h},
 				color.setA(node[17] or -1, t > breakthrough and 180 or 220))
 		end
 	end
@@ -734,7 +734,7 @@ local function drawMetricUnfancy2(metric, metData)
 	for i = 0, frameCnt do
 		local metVal = metric[i]
 		if metVal then
-			gfx.drawBox({offsetX + ((i - 1 - fMin) - 0.5) * colWidth, metricYOffset - height * metVal, colWidth, metVal * height},
+			gfx.drawBox({offsetX + (i - 1 - fMin) * colWidth, metricYOffset - height * metVal, colWidth, metVal * height},
 				color.setA(fillColor, i > breakthrough + 1 and 180 or 220))
 		end
 	end
@@ -943,7 +943,7 @@ event.render.add("graph2", "vis", function ()
 
 	-- Draw frame and graph information
 	if not settings.screenshotMode then
-		gfx.drawBox({offsetX + ((frameNum - minRange * frameCnt) - 0.5) * colWidth, 0, colWidth, metricHeight + 10}, {255, 255, 255, 255})
+		gfx.drawBox({offsetX + (frameNum - minRange * frameCnt) * colWidth, 0, colWidth, metricHeight + 10}, {255, 255, 255, 255})
 
 		draw.text {
 			font = draw.Font.SYSTEM,
