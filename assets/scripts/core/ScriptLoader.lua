@@ -61,15 +61,15 @@ local commonLibraries = {
 	"math",
 	"table",
 	"bit",
+	"os",
+	"io",
 }
 
 -- Contains a list of libraries includable using "require" by privileged scripts
 local privilegedLibraries = {
 	"package",
 	"coroutine",
-	"os",
 	"debug",
-	"io",
 	"ffi",
 	"jit",
 	"jit.p",
