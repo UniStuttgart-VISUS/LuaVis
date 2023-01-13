@@ -8,6 +8,7 @@ local color = require "system.utils.Color"
 local utils = require "system.utils.Utilities"
 local vector2 = require "system.utils.Vector2"
 
+local svglib = require "luavis.vis.SVG"
 local draw = require "luavis.vis.Draw"
 
 -- ----------------------------------------------------------
@@ -19,30 +20,33 @@ local splitScreenRatio = 100 / 540
 -- ----------------------------------------------------------
 -- Set keyboard events and related settings.
 -- ----------------------------------------------------------
-local mouseKeys, settings = {}, {}
+local mouseKeys = {}
+settings = {}
 
-local function setKey(keys, setting, default, func)
+local function setKey(keys, name, default, func)
 	if type(keys) ~= "table" then
 		keys = {keys}
 	end
 
 	for _, key in ipairs(keys) do
-		mouseKeys[tostring(key)] = {setting = setting, func = func}
+		mouseKeys[tostring(key)] = {name = name, func = func}
 	end
 
-	settings[setting] = default
+	if settings[name] == nil then
+		settings[name] = default
+	end
 end
 
 local function pressedKey()
 	for k, v in pairs(mouseKeys) do
 		if (input.keyPress(k)) then
-			v.func(k, v.setting)
+			v.func(k, v.name)
 		end
 	end
 end
 
-local function toggle(_, setting)
-	settings[setting] = not settings[setting]
+local function toggle(_, name)
+	settings[name] = not settings[name]
 end
 
 setKey("B", "hidePostBreakthrough", false, toggle)
@@ -54,8 +58,11 @@ setKey("S", "screenshotMode", false, toggle)
 setKey("C", "smoothGraph", false, toggle)
 setKey("D", "showDebugInfo", false, toggle)
 
-setKey("M", "activeMetricID", 1, function(_, setting) settings[setting] = nil end)
-setKey({1, 2, 3, 4, 5, 6, 7}, "activeMetricID", 1, function(key, setting) settings[setting] = tonumber(key) end)
+local printGraph -- forward defined function
+setKey("G", "printGraph", nil, function() printGraph() end)
+
+setKey("M", "activeMetricID", 1, function(_, name) settings[name] = nil end)
+setKey({1, 2, 3, 4, 5, 6, 7}, "activeMetricID", 1, function(key, name) settings[name] = tonumber(key) end)
 
 -- ----------------------------------------------------------
 -- Parse input path and set layout.
@@ -87,6 +94,7 @@ pcall(function ()
 	imgW = graphData.imgW
 	imgH = graphData.imgH
 end)
+local imgSize = vector2(imgW, imgH)
 
 local fb_id = "" .. imgW .. "x" .. imgH
 
@@ -142,6 +150,7 @@ end)
 --- @field [20] N.Child
 --- @field [21] N.Break
 --- @field [22] N.Color2
+--- @field [23] N.PosOrigSize
 
 local nodes = utils.deepCopy(graphData.Nodes)
 local edges = utils.deepCopy(graphData.Edges)
@@ -598,6 +607,7 @@ local function initGraph()
 		local node = nodes[i]
 
 		node[10] = vector2(offsetX, offsetY) + posMapper(node) * wSize
+		node[23] = posMapper(node) * imgSize
 
 		local col = utils.clamp(0, (node[1] - frameNum) + 0.5, 1)
 		local a = col % 1 * 0.5 + 0.75
@@ -775,6 +785,7 @@ imgCacheDir = nil
 imgCache = {}
 
 local frameName = nil
+local frameInfo = nil
 local numCacheEntries = 25
 
 local function drawImage()
@@ -791,15 +802,15 @@ local function drawImage()
 		end
 
 		if settings.showDebugInfo then
-			local w, h = frameBuffers[fb_id][frameMemIndex].buffer.getSize()
-			frameName = frameBuffers[fb_id][frameMemIndex].name .. " - " .. frameBuffers[fb_id][frameMemIndex].buffer.id .. " - " .. w .. "x" .. h
+			frameInfo = frameBuffers[fb_id][frameMemIndex].name .. " - " .. frameBuffers[fb_id][frameMemIndex].buffer.id .. " - " .. fb_id
 		else
-			frameName = nil
+			frameInfo = nil
 		end
+
+		frameName = frameBuffers[fb_id][frameMemIndex].name
 
 		-- Draw image
 		local fb = frameBuffers[fb_id][frameMemIndex].buffer
-		if not fb.isValid() then error("Invalid framebuffer") end
 		if fb then
 			gfx.drawTintedSprite(fb.id, {offsetX, offsetY, graphWidth, graphHeight}, {0, 0, imgW, imgH}, {255,255,255,255})
 		end
@@ -809,15 +820,23 @@ end
 -- ----------------------------------------------------------
 -- Draw graph and interfaces according to user's settings.
 -- ----------------------------------------------------------
+local nodeCircles = {} -- array of {.position, .radius, .color, .marked}
+local linkLines = {} -- array of {.source, .target, .color}
+local interfaceRects = {} -- array of {.lower, .larger, .color, .marked}
+
 local function drawNode(node)
 	if (settings.hideUnreachedNodes and node[1] > frameNum) then return end
 
 	local nodeRadius = node[12] * nodeRadiusFactor + nodeBaseRadius
-	-- Outline
+
 	local alpha = math.max(color.getA(node[11]), 50)
+
+	-- Mark current frame's nodes
 	if node[1] == frameNum then
 		draw.circle(node[10], sizeFactor * (nodeRadius * 1.1 + 2), node[17], 30, settings.smoothGraph)
 	end
+
+	-- Draw node and emulate black border by drawing a larger, black circle beneath
 	draw.circle(node[10], sizeFactor * (nodeRadius + 1), color.rgba(0, 0, 0, alpha), 30, settings.smoothGraph)
 	draw.circle(node[10], sizeFactor * nodeRadius, node[22], 30, settings.smoothGraph)
 
@@ -833,6 +852,8 @@ local function drawNode(node)
 	--	alignX = 0.5,
 	--	alignY = 0.5,
 	--}
+
+	table.insert(nodeCircles, {position = node[23], radius = nodeRadius, color = {color.getRGBA(node[22])}, marked = (node[1] == frameNum)}) -- TODO: adjust nodeRadius
 end
 
 local function drawLink(link)
@@ -846,15 +867,8 @@ local function drawLink(link)
 	end
 
 	draw.line(link.source[10], link.dest[10], color.hsv(0, 0.0, 0.6, 0.6), startWeight, endWeight, settings.smoothGraph)
-end
 
-local function drawGraph()
-	for _, link in ipairs(settings.hidePostBreakthrough and preBreakLinks or links) do
-		drawLink(link)
-	end
-	for _, i in ipairs(settings.hidePostBreakthrough and preBreakNodes or liveNodes) do
-		drawNode(nodes[i])
-	end
+	table.insert(linkLines, {source = link.source[23], target = link.dest[23], color = {color.getRGBA(color.hsv(0, 0.0, 0.6, 0.6))}})
 end
 
 local function drawActiveInterfaces()
@@ -873,7 +887,79 @@ local function drawActiveInterfaces()
 			gfx.drawBox({r[1] + margin, r[2] + r[4] - margin, r[3] - margin * 2, margin}, col)
 			gfx.drawBox({r[1], r[2], margin, r[4]}, col)
 			gfx.drawBox({r[1] + r[3] - margin, r[2], margin, r[4]}, col)
+
+			table.insert(interfaceRects, {lower = vector2(bbox[1], bbox[2]), larger = vector2(bbox[3], bbox[4]), color = {color.getRGBA(col)}, marked = node[21]})
 		end
+	end
+end
+
+local function drawGraph()
+	nodeCircles = {}
+	linkLines = {}
+	interfaceRects = {}
+
+	for _, link in ipairs(settings.hidePostBreakthrough and preBreakLinks or links) do
+		drawLink(link)
+	end
+	for _, i in ipairs(settings.hidePostBreakthrough and preBreakNodes or liveNodes) do
+		drawNode(nodes[i])
+	end
+	if nodeMapperIndex % #nodeMappers == 0 then
+		drawActiveInterfaces()
+	end
+end
+
+local function hexColor(rgba)
+	local hex = "#"
+	for i = 1, 3 do
+		local minor = rgba[i] % 16
+		local major = (rgba[i] - minor) / 16
+		hex = hex .. string.format("%x", major) .. string.format("%x", minor)
+	end
+	return hex
+end
+
+printGraph = function ()
+	local filename = frameName:gsub("/", "_")
+	local timestamp = os.date('%Y-%m-%d-%H-%M-%S')
+	filename = filename .. "_" .. timestamp .. ".svg"
+
+	-- Create SVG file from nodeCircles and linkLines
+	local svg_graph = svglib:create(imgW, imgH)
+
+	for _, link in ipairs(linkLines) do
+		svg_graph:addLine(link.source.x, link.source.y, link.target.x, link.target.y, hexColor(link.color), 4, hexColor(link.color))
+	end
+	
+	for _, node in ipairs(nodeCircles) do
+		local radius = 4 * node.radius
+		svg_graph:addCircle(radius, node.position.x, node.position.y, "#000000", 3, hexColor(node.color))
+		if node.marked then
+			local h, s, v, a = color.toHSV(color.rgba(unpack(node.color)))
+			s = math.min(1, s * 1.2)
+			v = math.min(1, v * 1.2)
+			svg_graph:addCircle(radius * 1.2, node.position.x, node.position.y, hexColor({color.getRGBA(color.hsv(h, s, v, a))}), 4, "transparent")
+		end
+	end
+	
+	for _, interfaces in ipairs(interfaceRects) do
+		svg_graph:addRect(interfaces.lower.x, interfaces.lower.y, interfaces.larger.x - interfaces.lower.x,
+			interfaces.larger.y - interfaces.lower.y, hexColor(interfaces.color), interfaces.marked and 6 or 3, "transparent")
+	end
+
+	local content = svg_graph:draw()
+
+	local file = io.open(filename, "w")
+	if file then
+		local success = file:write(content)
+		if success then
+			file:flush()
+		else
+			log.error("Unable to write SVG file.")
+		end
+		file:close()
+	else
+		log.error("Unable to create SVG file.")
 	end
 end
 
@@ -953,7 +1039,6 @@ event.render.add("graph2", "vis", function ()
 
 	drawImage()
 	drawGraph()
-	drawActiveInterfaces()
 
 	-- Draw frame and graph information
 	if not settings.screenshotMode then
@@ -972,7 +1057,7 @@ event.render.add("graph2", "vis", function ()
 			alignY = 1,
 		}
 
-		local graphName = frameName
+		local graphName = frameInfo
 		pcall(function () graphName = graphData.graphName end)
 
 		draw.text {
