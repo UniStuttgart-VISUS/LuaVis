@@ -6,11 +6,17 @@ Implementation of parts of Adrian Zeyfang's Master's thesis for the visualizatio
 
 ## Compilation
 
-LuaVis depends on the following libraries (please use the linked repositories for compatibility):
+LuaVis (C++) depends on the following libraries (please use the linked repositories for compatibility):
 
 - [LuaJIT](https://github.com/LuaJIT/LuaJIT)
 - [cppfs](https://github.com/straubar/cppfs)
 - [SFML](https://github.com/Marukyu/SFML)
+
+
+
+To run the LuaVis application with the implemented Lua scripts, additionally, the following Lua libraries have to be provided:
+
+- [SVG-Lua](https://github.com/Jericho1060/svg-lua.git): `svg.lua` or `svg-min.lua` as `assets/scripts/luavis/vis/SVG.lua`
 
 
 
