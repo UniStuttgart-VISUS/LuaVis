@@ -51,6 +51,8 @@ end
 
 setKey("B", "hidePostBreakthrough", false, toggle)
 setKey("N", "hideUnreachedNodes", false, toggle)
+setKey("T", "colorByNodeType", false, toggle)
+setKey("E", "simplify", true, toggle)
 setKey("W", "unweightedLinks", false, toggle)
 setKey("L", "logScale", false, toggle)
 setKey("F", "metricFanciness", false, toggle)
@@ -252,34 +254,17 @@ pcall(function ()
 	end
 end)
 
+local allNodes = {}
 local liveNodes = {}
 local preBreakNodes = {}
 
 for i = 1, #nodes do
 	local node = nodes[i]
-	if (node[8] == 1 and node[9] <= 1) or graphData.Rects[i][1] == 0 then
-		node[16] = i
-	else
+	allNodes[#allNodes + 1] = i
+	if not ((node[8] == 1 and node[9] == 1) or graphData.Rects[i][1] == 0) then
 		liveNodes[#liveNodes + 1] = i
 		if node[1] <= breakthrough then
 			preBreakNodes[#preBreakNodes + 1] = i
-		end
-	end
-end
-
-local simplify = true
-if simplify then
-	for i = #edges - 1, 1, -2 do
-		local n1, n2 = nodes[edges[i] + 1], nodes[edges[i + 1] + 1]
-		if n1[16] then
-			--n1[16] = n2[16] or n2[2] + 1
-		end
-	end
-
-	for i = 1, #nodes do
-		local node = nodes[i]
-		if node[16] == i then
-			node[16] = nil
 		end
 	end
 end
@@ -555,6 +540,7 @@ local function initGraph()
 		-- Node colors
 		local hue = (node[18] * 0.72 + 10.4) * node[18] * 0.7
 		local sat = 0.4 + ((node[18] * 0.8 + .35) * node[18]) % 0.5
+
 		node[17] = color.hsv(hue, sat, 1, 1)
 		node[22] = color.hsv(hue, sat, 0.8, 0.8)
 	end
@@ -636,6 +622,39 @@ local function initGraph()
 end
 
 initGraph()
+
+-- ----------------------------------------------------------
+-- Draw node legend.
+-- ----------------------------------------------------------
+local function drawColorLegend()
+	local drawItem = function(offset, text, node_color)
+		local y = offsetY + 7 * sizeFactor
+
+		draw.text {
+			font = draw.Font.SYSTEM,
+			text = text,
+			x = offset,
+			y = y + 10 * sizeFactor,
+			size = sizeFactor * 10,
+			fillColor = node_color,
+			outlineColor = color.BLACK,
+			outlineThickness = 2,
+			alignX = 1,
+			alignY = 1,
+		}
+	
+		gfx.drawBox({offset + 10 * sizeFactor, y, 30 * sizeFactor, 10 * sizeFactor}, node_color)
+	end
+
+	if settings.colorByNodeType then
+		local margin = 90
+		drawItem(offsetX + (50 + 0 * margin) * sizeFactor, "split", nodeColorSplit)
+		drawItem(offsetX + (50 + 1 * margin) * sizeFactor, "merge", nodeColorMerge)
+		drawItem(offsetX + (50 + 2 * margin) * sizeFactor, "source", nodeColorBegin)
+		drawItem(offsetX + (50 + 3 * margin) * sizeFactor, "sink", nodeColorEnd)
+		drawItem(offsetX + (50 + 4 * margin) * sizeFactor, "multi", nodeColorMulti)
+	end
+end
 
 -- ----------------------------------------------------------
 -- Draw selected or all metric(s).
@@ -833,12 +852,12 @@ local function drawNode(node)
 
 	-- Mark current frame's nodes
 	if node[1] == frameNum then
-		draw.circle(node[10], sizeFactor * (nodeRadius * 1.1 + 2), node[17], 30, settings.smoothGraph)
+		draw.circle(node[10], sizeFactor * (nodeRadius * 1.1 + 2), settings.colorByNodeType and getNodeTypeColor(node) or node[17], 30, settings.smoothGraph)
 	end
 
 	-- Draw node and emulate black border by drawing a larger, black circle beneath
 	draw.circle(node[10], sizeFactor * (nodeRadius + 1), color.rgba(0, 0, 0, alpha), 30, settings.smoothGraph)
-	draw.circle(node[10], sizeFactor * nodeRadius, node[22], 30, settings.smoothGraph)
+	draw.circle(node[10], sizeFactor * nodeRadius, settings.colorByNodeType and getNodeTypeColor(node) or node[22], 30, settings.smoothGraph)
 
 	--draw.text {
 	--	font = draw.Font.SYSTEM,
@@ -901,7 +920,7 @@ local function drawGraph()
 	for _, link in ipairs(settings.hidePostBreakthrough and preBreakLinks or links) do
 		drawLink(link)
 	end
-	for _, i in ipairs(settings.hidePostBreakthrough and preBreakNodes or liveNodes) do
+	for _, i in ipairs(settings.simplify and (settings.hidePostBreakthrough and preBreakNodes or liveNodes) or allNodes) do
 		drawNode(nodes[i])
 	end
 	if nodeMapperIndex % #nodeMappers == 0 then
@@ -1039,6 +1058,7 @@ event.render.add("graph2", "vis", function ()
 
 	drawImage()
 	drawGraph()
+	drawColorLegend()
 
 	-- Draw frame and graph information
 	if not settings.screenshotMode then
