@@ -14,7 +14,7 @@ local draw = require "luavis.vis.Draw"
 -- ----------------------------------------------------------
 -- Settings to change input dataset and layout.
 -- ----------------------------------------------------------
-local graphData = require "luavis.vis.graphdata.GraphCa4M1"
+local graphData = require "luavis.vis.graphdata.CurrentGraph"
 local splitScreenRatio = 100 / 540
 
 -- ----------------------------------------------------------
@@ -54,6 +54,7 @@ setKey("N", "hideUnreachedNodes", false, toggle)
 setKey("T", "colorByNodeType", false, toggle)
 setKey("E", "simplify", true, toggle)
 setKey("W", "unweightedLinks", false, toggle)
+setKey("I", "showInterfaces", true, toggle)
 setKey("L", "logScale", false, toggle)
 setKey("F", "metricFanciness", false, toggle)
 setKey("S", "screenshotMode", false, toggle)
@@ -110,8 +111,8 @@ end)
 --- @class N.Id
 --- @class N.X
 --- @class N.Y
---- @class N.Vx
---- @class N.Vy
+--- @class N.Velocity
+--- @class N.Modified
 --- @class N.Area
 --- @class N.In
 --- @class N.Out
@@ -134,8 +135,8 @@ end)
 --- @field [2] N.Id
 --- @field [3] N.X
 --- @field [4] N.Y
---- @field [5] N.Vx
---- @field [6] N.Vy
+--- @field [5] N.Velocity
+--- @field [6] N.Modified
 --- @field [7] N.Area
 --- @field [8] N.In
 --- @field [9] N.Out
@@ -472,6 +473,7 @@ local nodeColorMerge = color.fromTable {255, 160, 100}
 local nodeColorBegin = color.fromTable {60, 255, 60}
 local nodeColorEnd   = color.fromTable {255, 60, 60}
 local nodeColorMulti = color.fromTable {200, 100, 200}
+local nodeColorModified = color.fromTable {255, 237, 160}
 local nodeColorInvis = color.TRANSPARENT
 
 local nodeBaseRadius = 0
@@ -482,20 +484,24 @@ local preBreakLinks
 
 local function getNodeTypeColor(node)
 	local nIn, nOut = node[8], node[9]
-	if nIn == 0 then
-		return nodeColorBegin
-	elseif nOut == 0 then
-		return nodeColorEnd
+	
+	--[[
+	if node[6] == 1 then -- modified flag set
+		return nodeColorModified
 	end
-	if nIn == 1 then
-		if nOut == 1 then
-			return nodeColorInvis
-		else
-			return nodeColorSplit
-		end
-	elseif nOut == 1 then
+	--]]
+	
+	if nIn == 0 then -- no incoming edges -> source
+		return nodeColorBegin
+	elseif nOut == 0 then -- no outgoing edges -> sink
+		return nodeColorEnd
+	elseif nIn == 1 and nOut == 1 then -- one incoming and one outgoing edge -> hide it
+		return nodeColorInvis
+	elseif nIn == 1 then -- one incoming and multiple outoing edges -> split
+		return nodeColorSplit
+	elseif nOut == 1 then -- one outgoing and multiple incoming edges -> merge
 		return nodeColorMerge
-	else
+	else -- multiple incoming and outgoing edges -> multiple
 		return nodeColorMulti
 	end
 end
@@ -779,20 +785,19 @@ local function drawMetric(metric, metData)
 	else
 		drawMetricUnfancy2(metric, metData)
 	end
-	if not settings.screenshotMode then
-		draw.text {
-			font = draw.Font.SYSTEM,
-			text = metData.name,
-			x = sizeFactor * 20,
-			y = sizeFactor * metData.id * 15,
-			size = sizeFactor * 12,
-			fillColor = color.hsv(metData.id * 0.3 + 0.5, (metData.id * 0.15 + 0.4) % 1 * 0.5, 1, 1),
-			outlineColor = color.BLACK,
-			outlineThickness = 1,
-			alignX = 0,
-			alignY = 1,
-		}
-	end
+	
+	draw.text {
+		font = draw.Font.SYSTEM,
+		text = metData.name,
+		x = sizeFactor * 20,
+		y = sizeFactor * metData.id * 15,
+		size = sizeFactor * 12,
+		fillColor = color.hsv(metData.id * 0.3 + 0.5, (metData.id * 0.15 + 0.4) % 1 * 0.5, 1, 1),
+		outlineColor = color.BLACK,
+		outlineThickness = 1,
+		alignX = 0,
+		alignY = 1,
+	}
 end
 
 -- ----------------------------------------------------------
@@ -880,7 +885,7 @@ local function drawLink(link)
 
 	local startWeight, endWeight = 1.5 * sizeFactor, 1.5 * sizeFactor
 
-	if not settings.unweightedLinks and nodeMapperIndex % #nodeMappers == 0 then
+	if not settings.unweightedLinks and nodeMapperTargetIndex % #nodeMappers == 0 then
 		startWeight = sizeFactor * link.weight
 		endWeight = 0
 	end
@@ -923,7 +928,7 @@ local function drawGraph()
 	for _, i in ipairs(settings.simplify and (settings.hidePostBreakthrough and preBreakNodes or liveNodes) or allNodes) do
 		drawNode(nodes[i])
 	end
-	if nodeMapperIndex % #nodeMappers == 0 then
+	if nodeMapperIndex % #nodeMappers == 0 and settings.showInterfaces then
 		drawActiveInterfaces()
 	end
 end
@@ -1034,18 +1039,30 @@ event.render.add("graph2", "vis", function ()
 
 	-- Handle mouse click events that will change the selected frame
 	local colWidth = graphWidth / frameCnt / range
-	local mouseX = input.mouseX()
-	if (mouseX < offsetX) then mouseX = offsetX end
-	if (mouseX > graphWidth + offsetX) then mouseX = graphWidth + offsetX end
-	local newFrame = math.min(frameCnt - 1, math.floor((mouseX - offsetX) / colWidth + 0.5 + frameCnt * minRange))
+	local curFramePos = offsetX + (frameNum - minRange * frameCnt) * colWidth
 
-	if input.mouseDown(1) or (settings.hidePostBreakthrough and newFrame > breakthrough) then
-		if (settings.hidePostBreakthrough and newFrame > breakthrough) then newFrame = breakthrough end
-		if frameNum ~= newFrame then
-			frameNum = newFrame
+	local selectFrame = function(x, click)
+		if (x < offsetX) then x = offsetX end
+		if (x > graphWidth + offsetX) then x = graphWidth + offsetX end
 
-			needsGraphReload = true
+		local newFrame = math.min(frameCnt - 1, math.floor((x - offsetX) / colWidth + 0.5 + frameCnt * minRange))
+
+		if click or (settings.hidePostBreakthrough and newFrame > breakthrough) then
+			if (settings.hidePostBreakthrough and newFrame > breakthrough) then newFrame = breakthrough end
+			if frameNum ~= newFrame then
+				frameNum = newFrame
+
+				needsGraphReload = true
+			end
 		end
+	end
+
+	selectFrame(input.mouseX(), input.mouseDown(1))
+	if input.keyPress("P") or input.keyPress("O") then
+		local right = (input.keyPress("P") and not rightToLeft) or (input.keyPress("O") and rightToLeft)
+		local nextFramePos = curFramePos + (right and colWidth or (-colWidth))
+
+		selectFrame(nextFramePos, true)
 	end
 
 	-- Initialize graph if necessary
@@ -1061,38 +1078,40 @@ event.render.add("graph2", "vis", function ()
 	drawColorLegend()
 
 	-- Draw frame and graph information
-	if not settings.screenshotMode then
+	if settings.screenshotMode then
+		gfx.drawBox({offsetX + (frameNum - minRange * frameCnt) * colWidth, 0, colWidth, metricHeight + 10}, {0, 0, 0, 255})
+	else
 		gfx.drawBox({offsetX + (frameNum - minRange * frameCnt) * colWidth, 0, colWidth, metricHeight + 10}, {255, 255, 255, 255})
-
-		draw.text {
-			font = draw.Font.SYSTEM,
-			text = "Frame: " .. frameNum + 1 .. " / " .. frameCnt,
-			x = gfx.getWidth() - sizeFactor * 20,
-			y = sizeFactor * 15,
-			size = sizeFactor * 12,
-			fillColor = color.rgb(100, 150, 255),
-			outlineColor = color.BLACK,
-			outlineThickness = 2,
-			alignX = 1,
-			alignY = 1,
-		}
-
-		local graphName = frameInfo
-		pcall(function () graphName = graphData.graphName end)
-
-		draw.text {
-			font = draw.Font.SYSTEM,
-			text = graphName,
-			x = gfx.getWidth() - sizeFactor * 20,
-			y = sizeFactor * 30,
-			size = sizeFactor * 12,
-			fillColor = color.rgb(255, 255, 255),
-			outlineColor = color.BLACK,
-			outlineThickness = 2,
-			alignX = 1,
-			alignY = 1,
-		}
 	end
+
+	draw.text {
+		font = draw.Font.SYSTEM,
+		text = "Frame: " .. frameNum + 1 .. " / " .. frameCnt,
+		x = gfx.getWidth() - sizeFactor * 20,
+		y = sizeFactor * 15,
+		size = sizeFactor * 12,
+		fillColor = color.rgb(100, 150, 255),
+		outlineColor = color.BLACK,
+		outlineThickness = 2,
+		alignX = 1,
+		alignY = 1,
+	}
+
+	local graphName = frameInfo
+	pcall(function () graphName = graphData.graphName end)
+
+	draw.text {
+		font = draw.Font.SYSTEM,
+		text = graphName,
+		x = gfx.getWidth() - sizeFactor * 20,
+		y = sizeFactor * 30,
+		size = sizeFactor * 12,
+		fillColor = color.rgb(255, 255, 255),
+		outlineColor = color.BLACK,
+		outlineThickness = 2,
+		alignX = 1,
+		alignY = 1,
+	}
 
 	-- Draw metric(s)
 	metricYOffset = 0
