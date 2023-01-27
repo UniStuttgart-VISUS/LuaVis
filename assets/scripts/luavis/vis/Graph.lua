@@ -106,140 +106,83 @@ pcall(function ()
 	breakthroughThreshold = graphData.btt
 end)
 
---- @class Node
---- @class N.Time
---- @class N.Id
---- @class N.X
---- @class N.Y
---- @class N.Velocity
---- @class N.Modified
---- @class N.Area
---- @class N.In
---- @class N.Out
---- @class N.Pos
---- @class N.Rad
---- @class N.WIn
---- @class N.WOut
---- @class N.Y2
---- @class N.YCount
---- @class N.Alias
---- @class N.Color
---- @class N.Uid
---- @class N.Parent
---- @class N.Child
---- @class N.Break
---- @class N.Color2
-
---- @type Node[]
---- @field [1] N.Time
---- @field [2] N.Id
---- @field [3] N.X
---- @field [4] N.Y
---- @field [5] N.Velocity
---- @field [6] N.Modified
---- @field [7] N.Area
---- @field [8] N.In
---- @field [9] N.Out
---- @field [10] N.Pos
---- @field [11] N.Rad
---- @field [12] N.WIn
---- @field [13] N.WOut
---- @field [14] N.Y2
---- @field [15] N.YCount
---- @field [16] N.Alias
---- @field [17] N.Color
---- @field [18] N.Uid
---- @field [19] N.Parent
---- @field [20] N.Child
---- @field [21] N.Break
---- @field [22] N.Color2
---- @field [23] N.PosOrigSize
-
 local nodes = utils.deepCopy(graphData.Nodes)
 local edges = utils.deepCopy(graphData.Edges)
 
-local breakthrough = 0
+for _, node in ipairs(nodes) do
+	local function move(dst, src) node[dst], node[src] = node[src], nil end
 
-local patchGaps = true
-if patchGaps then
-	local sinks = {}
-	for i = 1, #nodes do
-		local node = nodes[i]
-		if node[8] == 0 and node[9] == 1 then
-			local nearestDistance, nearestIdx = 30 ^ 2, nil
-			local x, y = node[3], node[4]
-			for idx, sink in ipairs(sinks) do
-				local dx, dy = sink[3] - x, sink[4] - y
-				local distance = dx * dx + dy * dy
-				if distance < nearestDistance then
-					nearestDistance = distance
-					nearestIdx = idx
-				end
-			end
-			if nearestIdx then
-				local nearestSink = table.remove(sinks, nearestIdx)
-				node[8] = 1
-				nearestSink[9] = 1
-				node[19] = nearestSink[2] + 1
-				nearestSink[20] = node[2] + 1
-				edges[#edges + 1] = nearestSink[2]
-				edges[#edges + 1] = node[2]
-			end
-		elseif node[8] == 1 and node[9] == 0 then
-			sinks[#sinks + 1] = node
-		end
-	end
+	-- values stored in the graph file
+	move("Time", 1)
+	move("Id", 2)
+	move("X", 3)
+	move("Y", 4)
+	move("Velocity", 5)
+	move("Modified", 6)
+	move("Area", 7)
+	move("EdgesIn", 8)
+	move("EdgesOut", 9)
+
+	-- values calculated and stored later on
+	node["Pos"] = false
+	node["Rad"] = false
+	node["WIn"] = false
+	node["WOut"] = false
+	node["Y2"] = false
+	node["YCount"] = false
+	node["Color"] = false
+	node["Uid"] = false
+	node["Parent"] = false
+	node["Child"] = false
+	node["Break"] = false
+	node["Color2"] = false
+	node["PosOrigSize"] = false
 end
 
+-- set up 1-to-1 parent-child relationships with respective largest areas,
+-- thus, covering the main channels implicitly
 for i = 1, #edges, 2 do
-	local n1, n2 = nodes[edges[i] + 1], nodes[edges[i + 1] + 1]
-	local parent = nodes[n2[19]]
-	local child = nodes[n1[20]]
-	if not parent or parent[7] < n1[7] then
-		n2[19] = n1[2] + 1
+	local src, dest = nodes[edges[i] + 1], nodes[edges[i + 1] + 1]
+	local parent = nodes[dest.Parent]
+	local child = nodes[src.Child]
+	if not parent or parent.Area < src.Area then
+		dest.Parent = src.Id + 1
 	end
-	if not child or child[7] < n2[7] then
-		n1[20] = n2[2] + 1
+	if not child or child.Area < dest.Area then
+		src.Child = dest.Id + 1
 	end
 end
 
+-- 
 local currentUID = 0
 local function nextUID()
 	currentUID = currentUID + 1
 	return currentUID
 end
 
-for i = 1, #nodes do
-	local node = nodes[i]
-	local parent = nodes[node[19]]
-	node[18] = parent and parent[20] == i and parent[18] or nextUID()
+for i, node in ipairs(nodes) do
+	local parent = nodes[node.Parent]
+	node.Uid = parent and parent.Child == i and parent.Uid or nextUID()
 end
 
-local patchMissingLabels = false
-if patchMissingLabels then
-	for i = 1, #nodes do
-		local node = nodes[i]
-		if node[3] == 0 and node[4] == 0 then
-			local parent = nodes[node[19]] or nodes[1]
-			node[3] = parent[3]
-			node[4] = parent[4]
-		end
-	end
-end
-
+-- 
 local nodesByTime = {}
 
-for i, node in ipairs(nodes) do
-	nodesByTime[node[1]] = nodesByTime[node[1]] or {}
-	table.insert(nodesByTime[node[1]], node)
+for _, node in ipairs(nodes) do
+	nodesByTime[node.Time] = nodesByTime[node.Time] or {}
+	table.insert(nodesByTime[node.Time], node)
 end
 
+-- 
 local function traceMainChannel(node)
 	if node then
-		node[21] = true
-		return traceMainChannel(nodes[node[19]])
+		node.Break = true
+		return traceMainChannel(nodes[node.Parent])
 	end
 end
+
+-- 
+local breakthrough = 0
 
 pcall(function ()
 	local rects = graphData.Rects
@@ -247,7 +190,7 @@ pcall(function ()
 		for i, r in ipairs(rects) do
 			local x = rightToLeft and r[1] or imgW - r[3]
 			if x < breakthroughThreshold then
-				breakthrough = nodes[i][1]
+				breakthrough = nodes[i].Time
 				traceMainChannel(nodes[i])
 				break
 			end
@@ -255,16 +198,16 @@ pcall(function ()
 	end
 end)
 
+-- 
 local allNodes = {}
 local liveNodes = {}
 local preBreakNodes = {}
 
-for i = 1, #nodes do
-	local node = nodes[i]
+for i, node in ipairs(nodes) do
 	allNodes[#allNodes + 1] = i
-	if not ((node[8] == 1 and node[9] == 1) or graphData.Rects[i][1] == 0) then
+	if not ((node.EdgesIn == 1 and node.EdgesOut == 1) or graphData.Rects[i][1] == 0) then
 		liveNodes[#liveNodes + 1] = i
-		if node[1] <= breakthrough then
+		if node.Time <= breakthrough then
 			preBreakNodes[#preBreakNodes + 1] = i
 		end
 	end
@@ -287,7 +230,7 @@ local function makeMetric(name, func, binOp)
 		binOp = binOp or binOpAdd
 		for i = 1, #nodes do
 			local node = nodes[i]
-			local ts = node[1] + 1
+			local ts = node.Time + 1
 			local value = func(node)
 			metric[ts] = binOp(value, metric[ts])
 			raw[i] = value
@@ -323,7 +266,7 @@ local function makeMetric(name, func, binOp)
 end
 
 local metArea = makeMetric("Area", function (node)
-	return node[7]
+	return node.Area
 end)
 
 local metNumFingers = {}
@@ -333,13 +276,12 @@ if graphData.Interfaces then
 	local ifaces = graphData.Interfaces
 
 	local metInterfaceFluid = makeMetric("Interface length fluid", function (node)
-		return ifaces[node[2] * 2 + 1]
+		return ifaces[node.Id * 2 + 1]
 	end)
 
-	for i = 1, #nodes do
-		local node = nodes[i]
-		local ts = node[1] + 1
-		local iface = ifaces[node[2] * 2 + 1]
+	for i, node in ipairs(nodes) do
+		local ts = node.Time + 1
+		local iface = ifaces[node.Id * 2 + 1]
 		if metInterfaceFluid[ts] and metInterfaceFluid[ts] > 0 and iface then
 			nodeFluidProportion[i] = iface / metInterfaceFluid[ts]
 		else
@@ -348,32 +290,32 @@ if graphData.Interfaces then
 	end
 
 	makeMetric("Interface length solid", function (node)
-		return ifaces[node[2] * 2 + 2]
+		return ifaces[node.Id * 2 + 2]
 	end)
 
 	metNumFingers = makeMetric("Number of fingers", function (node)
-		local ts = node[1] + 1
+		local ts = node.Time + 1
 
 		-- Only nodes with an interface length of at least 1% of this frame's total interface are counted
-		--local nodeFluid = (ifaces[node[2] * 2 + 1] or 0)
+		--local nodeFluid = (ifaces[node.Id * 2 + 1] or 0)
 		--local totalFluid = metInterfaceFluid[ts] or 0
 		--return nodeFluid >= math.min(30, totalFluid * 0.01) and 1 or 0
 
 		-- Only nodes with an area of at least 1% of this frame's total area are counted
-		local nodeArea = node[7]
+		local nodeArea = node.Area
 		local totalArea = metArea[ts] or 0
 		return nodeArea >= math.min(10, totalArea * 0.01) and 1 or 0
 	end)
 
 	makeMetric("Velocity", function (node)
 		-- Weigh velocity proportionally to fluid interface of each node
-		return node[5] * nodeFluidProportion[node[2] + 1]
-		--metric[ts] = math.max(metric[ts] or 0, node[5] or 0)
+		return node.Velocity * nodeFluidProportion[node.Id + 1]
+		--metric[ts] = math.max(metric[ts] or 0, node.Velocity or 0)
 	end)
 end
 
 local metMainArea = makeMetric("Main Channel Area", function (node)
-	return node[21] and node[7] or 0
+	return node.Break and node.Area or 0
 end)
 
 do
@@ -408,7 +350,7 @@ local nodeMappers = {
 	{
 		posMapper =
 			function (node)
-				return vector2(node[3] / imgW, node[4] / imgH)
+				return vector2(node.X / imgW, node.Y / imgH)
 			end,
 		radMapper =
 			function ()
@@ -418,8 +360,8 @@ local nodeMappers = {
 	{
 		posMapper =
 			function (node)
-				local y = (node[15] or node[14]) / maxTimestampHeight / 3 + 0.5
-				return vector2((node[1] / frameCnt - minRange) / range, y + 0.01)
+				local y = (node.YCount or node.Y2) / maxTimestampHeight / 3 + 0.5
+				return vector2((node.Time / frameCnt - minRange) / range, y + 0.01)
 			end,
 		radMapper =
 			function ()
@@ -429,8 +371,8 @@ local nodeMappers = {
 	{
 		posMapper =
 			function (node)
-				local y = node[14] / 40 + 0.5
-				return vector2((node[1] / frameCnt - minRange) / range, y + 0.01)
+				local y = node.Y2 / 40 + 0.5
+				return vector2((node.Time / frameCnt - minRange) / range, y + 0.01)
 			end,
 		radMapper =
 			function ()
@@ -440,7 +382,7 @@ local nodeMappers = {
 	{
 		posMapper =
 			function (node)
-				return vector2((node[1] / frameCnt - minRange) / range, node[4] / imgH)
+				return vector2((node.Time / frameCnt - minRange) / range, node.Y / imgH)
 			end,
 		radMapper =
 			function ()
@@ -483,10 +425,10 @@ local links
 local preBreakLinks
 
 local function getNodeTypeColor(node)
-	local nIn, nOut = node[8], node[9]
+	local nIn, nOut = node.EdgesIn, node.EdgesOut
 	
 	--[[
-	if node[6] == 1 then -- modified flag set
+	if node.Modified == 1 then -- modified flag set
 		return nodeColorModified
 	end
 	--]]
@@ -528,27 +470,25 @@ local function initGraph()
 	local timestampHeight = {}
 	local filledSlots = {}
 
-	for i = 1, #nodes do
-		local node = nodes[i]
-
-		if t ~= node[1] then
+	for _, node in ipairs(nodes) do
+		if t ~= node.Time then
 			if t then
 				timestampHeight[t] = y
 			end
-			t = node[1]
+			t = node.Time
 			y = 0
 		else
 			y = y + 1
 		end
-		node[14] = y
-		node[15] = nil
+		node.Y2 = y
+		node.YCount = false
 
 		-- Node colors
-		local hue = (node[18] * 0.72 + 10.4) * node[18] * 0.7
-		local sat = 0.4 + ((node[18] * 0.8 + .35) * node[18]) % 0.5
+		local hue = (node.Uid * 0.72 + 10.4) * node.Uid * 0.7
+		local sat = 0.4 + ((node.Uid * 0.8 + .35) * node.Uid) % 0.5
 
-		node[17] = color.hsv(hue, sat, 1, 1)
-		node[22] = color.hsv(hue, sat, 0.8, 0.8)
+		node.Color = color.hsv(hue, sat, 1, 1)
+		node.Color2 = color.hsv(hue, sat, 0.8, 0.8)
 	end
 
 	if t then
@@ -568,22 +508,20 @@ local function initGraph()
 		end
 	end
 
-	for i = 1, #nodes do
-		local node = nodes[i]
-		node[14] = node[14] * 2 - (timestampHeight[node[1]] or 0)
+	for _, node in ipairs(nodes) do
+		node.Y2 = node.Y2 * 2 - (timestampHeight[node.Time] or 0)
 	end
 
 	for i = 1, #edges, 2 do
 		local src = nodes[edges[i] + 1]
 		local dst = nodes[edges[i + 1] + 1]
-		if dst[8] == 1 and dst[9] == 1 then
-			dst[15] = src[15] or src[14]
+		if dst.EdgesIn == 1 and dst.EdgesOut == 1 then
+			nodes[edges[i + 1] + 1].YCount = src.YCount or src.Y2
 		end
 	end
 
-	for i = 1, #nodes do
-		local node = nodes[i]
-		local nx, ny = node[1], node[15] or node[14]
+	for _, node in ipairs(nodes) do
+		local nx, ny = node.Time, node.YCount or node.Y2
 		local index = ny + 256 * (nx + 1)
 		local occupancy = filledSlots[index]
 		if not occupancy then
@@ -591,22 +529,20 @@ local function initGraph()
 		else
 			occupancy = occupancy + 1
 			filledSlots[index] = occupancy
-			node[15] = ny + math.ceil(occupancy / 2) * 0.5 * (occupancy % 2 - 0.5) * 2
+			node.YCount = ny + math.ceil(occupancy / 2) * 0.5 * (occupancy % 2 - 0.5) * 2
 		end
 	end
 
-	for i = 1, #nodes do
-		local node = nodes[i]
+	for _, node in ipairs(nodes) do
+		node.Pos = vector2(offsetX, offsetY) + posMapper(node) * wSize
+		node.PosOrigSize = posMapper(node) * imgSize
 
-		node[10] = vector2(offsetX, offsetY) + posMapper(node) * wSize
-		node[23] = posMapper(node) * imgSize
-
-		local col = utils.clamp(0, (node[1] - frameNum) + 0.5, 1)
+		local col = utils.clamp(0, (node.Time - frameNum) + 0.5, 1)
 		local a = col % 1 * 0.5 + 0.75
 
-		node[11] = color.fade(getNodeTypeColor(node), a)
-		node[12] = 2 + utils.clamp(0, math.sqrt(node[7]) / 16, 8)
-		node[13] = 10 + a * 5
+		node.Rad = color.fade(getNodeTypeColor(node), a)
+		node.WIn = 2 + utils.clamp(0, math.sqrt(node.Area) / 16, 8)
+		node.WOut = 10 + a * 5
 	end
 
 	links = {}
@@ -614,13 +550,10 @@ local function initGraph()
 	for i = 1, #edges, 2 do
 		local src = nodes[edges[i] + 1]
 		local dst = nodes[edges[i + 1] + 1]
-		if dst[16] then
-			dst = nodes[dst[16]]
-		end
-		if src[16] == nil and (src[3] ~= 0 or src[4] ~= 0) then
-			local w = (src[13] + dst[13]) * 0.5
-			links[#links + 1] = {source = src, dest = dst, weight = w - 10, time = dst[1]}
-			if src[1] <= breakthrough then
+		if src.X ~= 0 or src.Y ~= 0 then
+			local w = (src.WOut + dst.WOut) * 0.5
+			links[#links + 1] = {source = src, dest = dst, weight = w - 10, time = dst.Time}
+			if src.Time <= breakthrough then
 				preBreakLinks[#preBreakLinks + 1] = links[#links]
 			end
 		end
@@ -679,14 +612,14 @@ local function drawMetricFancy(metData)
 	local t
 	local floor = math.floor
 	local min = math.min
-	for i = 1, #nodes do
+	for i, node in ipairs(nodes) do
 		local metVal = raw[i]
 		if metVal then
 			if lgs then
 				metVal = lgs(metVal + 1)
 			end
-			if t ~= nodes[i][1] then
-				t = nodes[i][1]
+			if t ~= node.Time then
+				t = node.Time
 				ys = {}
 			end
 			local y = metricYOffset - height * metVal
@@ -707,8 +640,8 @@ local function drawMetricUnfancyLog(raw, metric, metData)
 	setmetatable(heights, {__index = function() return 0 end})
  
 	if raw then
-		for i = 1, #nodes do
-			local t = nodes[i][1]
+		for _, node in ipairs(nodes) do
+			local t = node.Time
 			heights[t] = heights[t] + raw[i]
 		end
 	else
@@ -745,15 +678,14 @@ local function drawMetricUnfancy(metric, metData)
 	local height = metricHeight / metData.max
 	local ys = {}
 
-	for i = 1, #nodes do
+	for i, node in ipairs(nodes) do
 		local metVal = raw[i]
 		if metVal then
-			local node = nodes[i]
-			local t = node[1]
+			local t = node.Time
 			local h = height * metVal
 			ys[t] = (ys[t] or (metricYOffset - height * (metric[t + 1] or 0))) + h
 			gfx.drawBox({offsetX + (t - fMin) * colWidth, ys[t] - h, colWidth, h},
-				color.setA(node[17] or -1, t > breakthrough and 180 or 220))
+				color.setA(node.Color or -1, t > breakthrough and 180 or 220))
 		end
 	end
 end
@@ -849,20 +781,20 @@ local linkLines = {} -- array of {.source, .target, .color}
 local interfaceRects = {} -- array of {.lower, .larger, .color, .marked}
 
 local function drawNode(node)
-	if (settings.hideUnreachedNodes and node[1] > frameNum) then return end
+	if (settings.hideUnreachedNodes and node.Time > frameNum) then return end
 
-	local nodeRadius = node[12] * nodeRadiusFactor + nodeBaseRadius
+	local nodeRadius = node.WIn * nodeRadiusFactor + nodeBaseRadius
 
-	local alpha = math.max(color.getA(node[11]), 50)
+	local alpha = math.max(color.getA(node.Rad), 50)
 
 	-- Mark current frame's nodes
-	if node[1] == frameNum then
-		draw.circle(node[10], sizeFactor * (nodeRadius * 1.1 + 2), settings.colorByNodeType and getNodeTypeColor(node) or node[17], 30, settings.smoothGraph)
+	if node.Time == frameNum then
+		draw.circle(node.Pos, sizeFactor * (nodeRadius * 1.1 + 2), settings.colorByNodeType and getNodeTypeColor(node) or node.Color, 30, settings.smoothGraph)
 	end
 
 	-- Draw node and emulate black border by drawing a larger, black circle beneath
-	draw.circle(node[10], sizeFactor * (nodeRadius + 1), color.rgba(0, 0, 0, alpha), 30, settings.smoothGraph)
-	draw.circle(node[10], sizeFactor * nodeRadius, settings.colorByNodeType and getNodeTypeColor(node) or node[22], 30, settings.smoothGraph)
+	draw.circle(node.Pos, sizeFactor * (nodeRadius + 1), color.rgba(0, 0, 0, alpha), 30, settings.smoothGraph)
+	draw.circle(node.Pos, sizeFactor * nodeRadius, settings.colorByNodeType and getNodeTypeColor(node) or node.Color2, 30, settings.smoothGraph)
 
 	--draw.text {
 	--	font = draw.Font.SYSTEM,
@@ -877,7 +809,7 @@ local function drawNode(node)
 	--	alignY = 0.5,
 	--}
 
-	table.insert(nodeCircles, {position = node[23], radius = nodeRadius, color = {color.getRGBA(node[22])}, marked = (node[1] == frameNum)}) -- TODO: adjust nodeRadius
+	table.insert(nodeCircles, {position = node.PosOrigSize, radius = nodeRadius, color = {color.getRGBA(node.Color2)}, marked = (node.Time == frameNum)})
 end
 
 local function drawLink(link)
@@ -890,29 +822,29 @@ local function drawLink(link)
 		endWeight = 0
 	end
 
-	draw.line(link.source[10], link.dest[10], color.hsv(0, 0.0, 0.6, 0.6), startWeight, endWeight, settings.smoothGraph)
+	draw.line(link.source.Pos, link.dest.Pos, color.hsv(0, 0.0, 0.6, 0.6), startWeight, endWeight, settings.smoothGraph)
 
-	table.insert(linkLines, {source = link.source[23], target = link.dest[23], color = {color.getRGBA(color.hsv(0, 0.0, 0.6, 0.6))}})
+	table.insert(linkLines, {source = link.source.PosOrigSize, target = link.dest.PosOrigSize, color = {color.getRGBA(color.hsv(0, 0.0, 0.6, 0.6))}})
 end
 
 local function drawActiveInterfaces()
 	for _, node in ipairs(nodesByTime[frameNum] or {}) do
-		local bbox = graphData.Rects and graphData.Rects[node[2] + 1]
+		local bbox = graphData.Rects and graphData.Rects[node.Id + 1]
 		if bbox then
-			local col = node[17]
+			local col = node.Color
 			local r = {
 				offsetX + bbox[1] / imgW * graphWidth,
 				offsetY + bbox[2] / imgH * graphHeight,
 				(bbox[3] - bbox[1]) / imgW * graphWidth,
 				(bbox[4] - bbox[2]) / imgH * graphHeight,
 			}
-			local margin = sizeFactor * (node[21] and 3 or 1)
+			local margin = sizeFactor * (node.Break and 3 or 1)
 			gfx.drawBox({r[1] + margin, r[2], r[3] - margin * 2, margin}, col)
 			gfx.drawBox({r[1] + margin, r[2] + r[4] - margin, r[3] - margin * 2, margin}, col)
 			gfx.drawBox({r[1], r[2], margin, r[4]}, col)
 			gfx.drawBox({r[1] + r[3] - margin, r[2], margin, r[4]}, col)
 
-			table.insert(interfaceRects, {lower = vector2(bbox[1], bbox[2]), larger = vector2(bbox[3], bbox[4]), color = {color.getRGBA(col)}, marked = node[21]})
+			table.insert(interfaceRects, {lower = vector2(bbox[1], bbox[2]), larger = vector2(bbox[3], bbox[4]), color = {color.getRGBA(col)}, marked = node.Break})
 		end
 	end
 end
