@@ -569,7 +569,7 @@ local function drawColorLegend()
 	local drawItem = function(offset, text, node_color)
 		local y = offsetY + 7 * sizeFactor
 
-		draw.text {
+		draw.text({
 			font = draw.Font.SYSTEM,
 			text = text,
 			x = offset,
@@ -580,7 +580,7 @@ local function drawColorLegend()
 			outlineThickness = 2,
 			alignX = 1,
 			alignY = 1,
-		}
+		})
 	
 		gfx.drawBox({offset + 10 * sizeFactor, y, 30 * sizeFactor, 10 * sizeFactor}, node_color)
 	end
@@ -640,7 +640,7 @@ local function drawMetricUnfancyLog(raw, metric, metData)
 	setmetatable(heights, {__index = function() return 0 end})
  
 	if raw then
-		for _, node in ipairs(nodes) do
+		for i, node in ipairs(nodes) do
 			local t = node.Time
 			heights[t] = heights[t] + raw[i]
 		end
