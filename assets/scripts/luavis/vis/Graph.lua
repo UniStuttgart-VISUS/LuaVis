@@ -205,7 +205,7 @@ local preBreakNodes = {}
 
 for i, node in ipairs(nodes) do
 	allNodes[#allNodes + 1] = i
-	if not ((node.EdgesIn == 1 and node.EdgesOut == 1) or graphData.Rects[i][1] == 0) then
+	if not (node.EdgesIn == 1 and node.EdgesOut == 1) then
 		liveNodes[#liveNodes + 1] = i
 		if node.Time <= breakthrough then
 			preBreakNodes[#preBreakNodes + 1] = i
@@ -569,6 +569,8 @@ local function drawColorLegend()
 	local drawItem = function(offset, text, node_color)
 		local y = offsetY + 7 * sizeFactor
 
+		gfx.drawBox({offset + 10 * sizeFactor, y, 30 * sizeFactor, 10 * sizeFactor}, node_color)
+		
 		draw.text({
 			font = draw.Font.SYSTEM,
 			text = text,
