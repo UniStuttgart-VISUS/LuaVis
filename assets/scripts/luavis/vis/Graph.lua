@@ -65,7 +65,7 @@ local printGraph -- forward defined function
 setKey("G", "printGraph", nil, function() printGraph() end)
 
 setKey("M", "activeMetricID", 1, function(_, name) settings[name] = nil end)
-setKey({1, 2, 3, 4, 5, 6, 7}, "activeMetricID", 1, function(key, name) settings[name] = tonumber(key) end)
+setKey({1, 2, 3, 4, 5, 6, 7, 8}, "activeMetricID", 1, function(key, name) settings[name] = tonumber(key) end)
 
 -- ----------------------------------------------------------
 -- Parse input path and set layout.
@@ -310,7 +310,6 @@ if graphData.Interfaces then
 	makeMetric("Velocity", function (node)
 		-- Weigh velocity proportionally to fluid interface of each node
 		return node.Velocity * nodeFluidProportion[node.Id + 1]
-		--metric[ts] = math.max(metric[ts] or 0, node.Velocity or 0)
 	end)
 end
 
@@ -326,6 +325,35 @@ do
 		end
 	end
 	makeMetric("Main Channel Area Ratio", ratio)
+end
+
+if graphData.Velocities then
+	local metric = {}
+	for ts = 1, graphData.startTime do
+		metric[ts] = 0
+	end
+	for i = 1, #graphData.Velocities do
+		local ts = graphData.startTime + i
+		metric[ts] = graphData.Velocities[i]
+	end
+
+	id = #metrics + 1
+	metrics[id] = metric
+
+	local maxValue = -math.huge
+	local minValue = math.huge
+	local min, max = math.min, math.max
+	for k, v in pairs(metric) do
+		minValue = min(minValue, v)
+		maxValue = max(maxValue, v)
+	end
+
+	metricData[id] = {
+		id = id,
+		min = minValue,
+		max = maxValue,
+		name = "Velocity Distribution",
+	}
 end
 
 local minRange = graphData.minRange
@@ -570,7 +598,7 @@ local function drawColorLegend()
 		local y = offsetY + 7 * sizeFactor
 
 		gfx.drawBox({offset + 10 * sizeFactor, y, 30 * sizeFactor, 10 * sizeFactor}, node_color)
-		
+
 		draw.text({
 			font = draw.Font.SYSTEM,
 			text = text,
