@@ -64,8 +64,11 @@ setKey("D", "showDebugInfo", false, toggle)
 local printGraph -- forward defined function
 setKey("G", "printGraph", nil, function() printGraph() end)
 
-setKey("M", "activeMetricID", 1, function(_, name) settings[name] = nil end)
+setKey("", "activeMetricID", 1, function() end)
 setKey({1, 2, 3, 4, 5, 6, 7, 8}, "activeMetricID", 1, function(key, name) settings[name] = tonumber(key) end)
+
+local exportMetrics -- forward defined function
+setKey("M", "exportMetrics", nil, function() exportMetrics() end)
 
 -- ----------------------------------------------------------
 -- Parse input path and set layout.
@@ -946,6 +949,53 @@ printGraph = function ()
 		file:close()
 	else
 		log.error("Unable to create SVG file.")
+	end
+end
+
+-- ----------------------------------------------------------
+-- Export metrics to CSV file.
+-- ----------------------------------------------------------
+exportMetrics = function ()
+	local filename = frameName:gsub("/", "_")
+	local timestamp = os.date('%Y-%m-%d-%H-%M-%S')
+	filename = filename .. "_" .. timestamp
+
+	local function writeMetric(filename, content)
+		local file = io.open(filename, "w")
+		if file then
+			local success = file:write(content)
+			if success then
+				file:flush()
+			else
+				log.error("Unable to write SVG file.")
+			end
+			file:close()
+		else
+			log.error("Unable to create SVG file.")
+		end
+	end
+
+	-- Gather metrics and store in CSV file format
+	for i=1, #metrics do
+		local metric = metrics[i]
+		local minVal = metricData[i].min
+		local maxVal = metricData[i].max
+		local name = metricData[i].name:gsub(" ", "_"):lower()
+
+		local content = ""
+		for ts = graphData.startTime + 1, graphData.endTime + 1 do
+			content = content .. ts .. ","
+		end
+		content = content .. "\n"
+		for ts = graphData.startTime + 1, graphData.endTime + 1 do
+			if metric[ts] then
+				content = content .. metric[ts] .. ","
+			else
+				content = content .. 0 .. ","
+			end
+		end
+
+		writeMetric(filename .. "_" .. name .. ".csv", content)
 	end
 end
 
