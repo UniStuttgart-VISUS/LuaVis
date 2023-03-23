@@ -14,7 +14,7 @@ local draw = require "luavis.vis.Draw"
 -- ----------------------------------------------------------
 -- Settings to change input dataset and layout.
 -- ----------------------------------------------------------
-local graphData = require "luavis.vis.graphdata.CurrentGraph"
+local graphData = require "luavis.vis.graphs.graph_circular.graph_1_fixed"
 local splitScreenRatio = 100 / 540
 
 -- ----------------------------------------------------------
@@ -74,8 +74,8 @@ setKey("M", "exportMetrics", nil, function() exportMetrics() end)
 -- Parse input path and set layout.
 -- ----------------------------------------------------------
 local imgDir = (graphData.imgDir
-	and (graphData.imgDir:match("(gfx_1/.*/)[^/]*$") or graphData.imgDir:match("(gfx_2/.*/)[^/]*$"))
-	or "unknown")
+	and (graphData.imgDir:match("(gfx_1/.*/)[^/]*$") or graphData.imgDir:match("(gfx_2/.*/)[^/]*$")
+	or graphData.imgDir:match("(gfx_3/.*/)[^/]*$")) or "unknown")
 
 local rightToLeft = not graphData.imgDir:match("(gfx_2/.*/)[^/]*$")
 
@@ -958,44 +958,42 @@ end
 exportMetrics = function ()
 	local filename = frameName:gsub("/", "_")
 	local timestamp = os.date('%Y-%m-%d-%H-%M-%S')
-	filename = filename .. "_" .. timestamp
-
-	local function writeMetric(filename, content)
-		local file = io.open(filename, "w")
-		if file then
-			local success = file:write(content)
-			if success then
-				file:flush()
-			else
-				log.error("Unable to write SVG file.")
-			end
-			file:close()
-		else
-			log.error("Unable to create SVG file.")
-		end
-	end
+	filename = filename .. "_" .. timestamp .. ".csv"
 
 	-- Gather metrics and store in CSV file format
+	local content = ""
+	for ts = graphData.startTime + 1, graphData.endTime + 1 do
+		content = content .. "," .. ts
+	end
+	content = content .. "\n"
+
 	for i=1, #metrics do
 		local metric = metrics[i]
-		local minVal = metricData[i].min
-		local maxVal = metricData[i].max
-		local name = metricData[i].name:gsub(" ", "_"):lower()
+		local name = metricData[i].name
 
-		local content = ""
-		for ts = graphData.startTime + 1, graphData.endTime + 1 do
-			content = content .. ts .. ","
-		end
-		content = content .. "\n"
+		content = content .. name
 		for ts = graphData.startTime + 1, graphData.endTime + 1 do
 			if metric[ts] then
-				content = content .. metric[ts] .. ","
+				content = content .. "," .. metric[ts]
 			else
-				content = content .. 0 .. ","
+				content = content .. "," .. 0
 			end
 		end
+		content = content .. "\n"
+	end
 
-		writeMetric(filename .. "_" .. name .. ".csv", content)
+	-- Write file content
+	local file = io.open(filename, "w")
+	if file then
+		local success = file:write(content)
+		if success then
+			file:flush()
+		else
+			log.error("Unable to write SVG file.")
+		end
+		file:close()
+	else
+		log.error("Unable to create SVG file.")
 	end
 end
 
@@ -1007,8 +1005,15 @@ event.render.add("graph2", "vis", function ()
 
 	-- Create image cache when input path changed
 	if imgCacheDir ~= imgDir then
+		local files = fileIO.listFiles(imgDir, fileIO.List.FILES, fileIO.List.FULL_PATH)
+		
 		imgCacheDir = imgDir
-		imgCache = fileIO.listFiles(imgDir, fileIO.List.FILES, fileIO.List.RECURSIVE, fileIO.List.FULL_PATH)
+		imgCache = {}
+		for _, name in ipairs(files) do
+			if string.sub(name, -3, -1) == "png" then
+				table.insert(imgCache, name)
+			end
+		end
 
 		local nameSortCache = {}
 		local function padNum(n)
