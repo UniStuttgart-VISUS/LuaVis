@@ -82,12 +82,14 @@ local rightToLeft = not graphData.imgDir:match("(gfx_2/.*/)[^/]*$")
 local sizeFactor = gfx.getWidth() / 644
 
 local metricHeight = splitScreenRatio * gfx.getHeight()
-local headerHeight = metricHeight + 10
+local headerHeight = metricHeight + 10 + 20 * sizeFactor
 
 local graphHeight = gfx.getHeight() - headerHeight
 local graphWidth = gfx.getWidth() - headerHeight * gfx.getWidth() / gfx.getHeight()
 local offsetX = (gfx.getWidth() - graphWidth) / 2
 local offsetY = headerHeight
+
+local font = draw.Font.SEGOE_SEMIBOLD
 
 frameCnt = 1
 frameNum = 1
@@ -603,14 +605,12 @@ local function drawColorLegend()
 		gfx.drawBox({offset + 10 * sizeFactor, y, 30 * sizeFactor, 10 * sizeFactor}, node_color)
 
 		draw.text({
-			font = draw.Font.SYSTEM,
+			font = font,
 			text = text,
 			x = offset,
 			y = y + 10 * sizeFactor,
 			size = sizeFactor * 10,
 			fillColor = node_color,
-			outlineColor = color.BLACK,
-			outlineThickness = 2,
 			alignX = 1,
 			alignY = 1,
 		})
@@ -631,7 +631,7 @@ end
 -- ----------------------------------------------------------
 -- Draw selected or all metric(s).
 -- ----------------------------------------------------------
-local metricYOffset = 0
+local metricYOffset = 20 * sizeFactor
 
 local function drawMetricFancy(metData)
 	local lgs = settings.logScale and math.log
@@ -752,15 +752,35 @@ local function drawMetric(metric, metData)
 	end
 	
 	draw.text {
-		font = draw.Font.SYSTEM,
+		font = font,
 		text = metData.name,
-		x = sizeFactor * 20,
-		y = sizeFactor * metData.id * 15,
+		x = offsetX,
+		y = sizeFactor * 15,
 		size = sizeFactor * 12,
-		fillColor = color.hsv(metData.id * 0.3 + 0.5, (metData.id * 0.15 + 0.4) % 1 * 0.5, 1, 1),
-		outlineColor = color.BLACK,
-		outlineThickness = 1,
+		fillColor = color.rgb(100, 150, 255),
 		alignX = 0,
+		alignY = 1,
+	}
+	
+	draw.text {
+		font = font,
+		text = "0 —",
+		x = offsetX - sizeFactor * 5,
+		y = headerHeight + sizeFactor * 2,
+		size = sizeFactor * 10,
+		fillColor = color.rgb(100, 150, 255),
+		alignX = 1,
+		alignY = 1,
+	}
+	
+	draw.text {
+		font = font,
+		text = "" .. metData.max .. " —",
+		x = offsetX - sizeFactor * 5,
+		y = sizeFactor * 25,
+		size = sizeFactor * 10,
+		fillColor = color.rgb(100, 150, 255),
+		alignX = 1,
 		alignY = 1,
 	}
 end
@@ -828,19 +848,6 @@ local function drawNode(node)
 	-- Draw node and emulate black border by drawing a larger, black circle beneath
 	draw.circle(node.Pos, sizeFactor * (nodeRadius + 1), color.rgba(0, 0, 0, alpha), 30, settings.smoothGraph)
 	draw.circle(node.Pos, sizeFactor * nodeRadius, settings.colorByNodeType and getNodeTypeColor(node) or node.Color2, 30, settings.smoothGraph)
-
-	--draw.text {
-	--	font = draw.Font.SYSTEM,
-	--	text = node.label,
-	--	x = sizeFactor * node.pos.x,
-	--	y = sizeFactor * node.pos.y,
-	--	size = sizeFactor * nodeRadius * 1.6,
-	--	fillColor = draw.Color.BLACK,
-	--	shadowColor = {255, 255, 255, 32},
-	--	outlineThickness = 0,
-	--	alignX = 0.5,
-	--	alignY = 0.5,
-	--}
 
 	table.insert(nodeCircles, {position = node.PosOrigSize, radius = nodeRadius, color = {color.getRGBA(node.Color2)}, marked = (node.Time == frameNum)})
 end
@@ -1096,20 +1103,18 @@ event.render.add("graph2", "vis", function ()
 
 	-- Draw frame and graph information
 	if settings.screenshotMode then
-		gfx.drawBox({offsetX + (frameNum - minRange * frameCnt) * colWidth, 0, colWidth, metricHeight + 10}, {0, 0, 0, 255})
+		gfx.drawBox({offsetX + (frameNum - minRange * frameCnt) * colWidth, 20 * sizeFactor, colWidth, metricHeight + 10}, {0, 0, 0, 255})
 	else
-		gfx.drawBox({offsetX + (frameNum - minRange * frameCnt) * colWidth, 0, colWidth, metricHeight + 10}, {255, 255, 255, 255})
+		gfx.drawBox({offsetX + (frameNum - minRange * frameCnt) * colWidth, 20 * sizeFactor, colWidth, metricHeight + 10}, {255, 255, 255, 255})
 	end
 
 	draw.text {
-		font = draw.Font.SYSTEM,
+		font = font,
 		text = "Frame: " .. frameNum + 1 .. " / " .. frameCnt,
-		x = gfx.getWidth() - sizeFactor * 20,
+		x = offsetX + graphWidth,
 		y = sizeFactor * 15,
 		size = sizeFactor * 12,
 		fillColor = color.rgb(100, 150, 255),
-		outlineColor = color.BLACK,
-		outlineThickness = 2,
 		alignX = 1,
 		alignY = 1,
 	}
@@ -1118,20 +1123,18 @@ event.render.add("graph2", "vis", function ()
 	pcall(function () graphName = graphData.graphName end)
 
 	draw.text {
-		font = draw.Font.SYSTEM,
+		font = font,
 		text = graphName,
-		x = gfx.getWidth() - sizeFactor * 20,
+		x = offsetX + graphWidth,
 		y = sizeFactor * 30,
 		size = sizeFactor * 12,
 		fillColor = color.rgb(255, 255, 255),
-		outlineColor = color.BLACK,
-		outlineThickness = 2,
 		alignX = 1,
 		alignY = 1,
 	}
 
 	-- Draw metric(s)
-	metricYOffset = 0
+	metricYOffset = 20 * sizeFactor
 
 	if settings.activeMetricID == nil then
 		for i=1, #metrics do
@@ -1147,14 +1150,12 @@ event.render.add("graph2", "vis", function ()
 	-- Debug output
 	if settings.showDebugInfo and not settings.screenshotMode then
 		draw.text {
-			font = draw.Font.SYSTEM,
+			font = font,
 			text = "Mouse: (" .. input.mouseX() .. ", " .. input.mouseY() .. ")",
-			x = gfx.getWidth() - sizeFactor * 20,
+			x = offsetX + graphWidth,
 			y = sizeFactor * 45,
 			size = sizeFactor * 12,
 			fillColor = color.rgb(100, 150, 255),
-			outlineColor = color.BLACK,
-			outlineThickness = 2,
 			alignX = 1,
 			alignY = 1,
 		}
