@@ -26,6 +26,7 @@ local loadInProgress = false
 local commonVirtualGlobals = {
 	"assert",
 	"dbg",
+	"dofile",
 	"error",
 	"ipairs",
 	"next",

@@ -14,8 +14,39 @@ local draw = require "luavis.vis.Draw"
 -- ----------------------------------------------------------
 -- Settings to change input dataset and layout.
 -- ----------------------------------------------------------
-local graphData = require "luavis.vis.graphs.graph_circular.graph_1_fixed"
-local splitScreenRatio = 100 / 540
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_circular/graph_1_fixed.lua")			-- Circular
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_octagonal/graph_1_fixed.lua")		-- Octagonal
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_triangular/graph_1_fixed.lua")		-- Triangular
+
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-2,M=1/graph_1_fixed.lua")		-- Ca=10-2,M=1
+local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-2,M=10/graph_1_fixed.lua")		-- Ca=10-2,M=10
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=0.2/graph_1_fixed.lua")	-- Ca=10-3,M=0.2
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=1/graph_1_fixed.lua")		-- Ca=10-3,M=1
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=10/graph_1_fixed.lua")		-- Ca=10-3,M=10
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-4,M=0.2/graph_1_fixed.lua")	-- Ca=10-4,M=0.2
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-4,M=1/graph_1_fixed.lua")		-- Ca=10-4,M=1
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-4,M=10/graph_1_fixed.lua")		-- Ca=10-4,M=10
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-5,M=0.2/graph_1_fixed.lua")	-- Ca=10-5,M=0.2
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-5,M=1/graph_1_fixed.lua")		-- Ca=10-5,M=1
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-5,M=10/graph_1_fixed.lua")		-- Ca=10-5,M=10
+
+local fileMap = {
+	{ path = "T:/temp/adrian/Dataset1png", dir = "gfx_1", rtl = true },
+	{ path = "T:/temp/adrian/NewDataset", dir = "gfx_2", rtl = false },
+	{ path = "S:/Daten/Flow/porous-media_experiment/nikos", dir = "gfx_3", rtl = true }
+}
+
+local imgDir = "unknown"
+local rightToLeft = true
+for _, dataset in ipairs(fileMap) do
+	local dir = graphData.imgDir
+	dir = dir:gsub(dataset.path, dataset.dir)
+
+	if dir:find(dataset.dir) then
+		imgDir = dir:match("(" .. dataset.dir .. "/.*/)[^/]*$")
+		rightToLeft = dataset.rtl
+	end
+end
 
 -- ----------------------------------------------------------
 -- Set keyboard events and related settings.
@@ -73,11 +104,7 @@ setKey("M", "exportMetrics", nil, function() exportMetrics() end)
 -- ----------------------------------------------------------
 -- Parse input path and set layout.
 -- ----------------------------------------------------------
-local imgDir = (graphData.imgDir
-	and (graphData.imgDir:match("(gfx_1/.*/)[^/]*$") or graphData.imgDir:match("(gfx_2/.*/)[^/]*$")
-	or graphData.imgDir:match("(gfx_3/.*/)[^/]*$")) or "unknown")
-
-local rightToLeft = not graphData.imgDir:match("(gfx_2/.*/)[^/]*$")
+local splitScreenRatio = 100 / 540
 
 local sizeFactor = gfx.getWidth() / 644
 
@@ -1124,7 +1151,7 @@ event.render.add("graph2", "vis", function ()
 
 	draw.text {
 		font = font,
-		text = graphName,
+		text = graphName or (settings.showDebugInfo and imgDir or ""),
 		x = offsetX + graphWidth,
 		y = sizeFactor * 30,
 		size = sizeFactor * 12,
