@@ -15,11 +15,11 @@ local draw = require "luavis.vis.Draw"
 -- Settings to change input dataset and layout.
 -- ----------------------------------------------------------
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_circular/graph_1_fixed.lua")			-- Circular
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_octagonal/graph_1_fixed.lua")		-- Octagonal
+local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_octagonal/graph_1_fixed.lua")		-- Octagonal
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_triangular/graph_1_fixed.lua")		-- Triangular
 
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-2,M=1/graph_1_fixed.lua")		-- Ca=10-2,M=1
-local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-2,M=10/graph_1_fixed.lua")		-- Ca=10-2,M=10
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-2,M=10/graph_1_fixed.lua")		-- Ca=10-2,M=10
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=0.2/graph_1_fixed.lua")	-- Ca=10-3,M=0.2
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=1/graph_1_fixed.lua")		-- Ca=10-3,M=1
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=10/graph_1_fixed.lua")		-- Ca=10-3,M=10
@@ -84,6 +84,7 @@ setKey("B", "hidePostBreakthrough", false, toggle)
 setKey("N", "hideUnreachedNodes", false, toggle)
 setKey("T", "colorByNodeType", false, toggle)
 setKey("E", "simplify", true, toggle)
+setKey("A", "unscaledNodes", false, toggle)
 setKey("W", "unweightedLinks", false, toggle)
 setKey("I", "showInterfaces", true, toggle)
 setKey("L", "logScale", false, toggle)
@@ -96,7 +97,7 @@ local printGraph -- forward defined function
 setKey("G", "printGraph", nil, function() printGraph() end)
 
 setKey("", "activeMetricID", 1, function() end)
-setKey({1, 2, 3, 4, 5, 6, 7, 8}, "activeMetricID", 1, function(key, name) settings[name] = tonumber(key) end)
+setKey({1, 2, 3, 4, 5, 6, 7, 8, 9}, "activeMetricID", 1, function(key, name) settings[name] = tonumber(key) end)
 
 local exportMetrics -- forward defined function
 setKey("M", "exportMetrics", nil, function() exportMetrics() end)
@@ -255,9 +256,17 @@ local function binOpAdd(v1, v2)
 	return (v1 or 0) + (v2 or 0)
 end
 
-local function makeMetric(name, func, binOp)
+local function binOpMax(v1, v2)
+	v1 = v1 or 0
+	v2 = v2 or 0
+
+	return math.max(v1, v2)
+end
+
+local function makeMetric(name, func, binOp, createRaw)
 	local metric = {}
 	local raw = {}
+	if createRaw == nil then createRaw = true end
 	if type(func) == "function" then
 		binOp = binOp or binOpAdd
 		for i = 1, #nodes do
@@ -290,10 +299,12 @@ local function makeMetric(name, func, binOp)
 		min = minValue,
 		max = maxValue,
 		name = name,
-		minRaw = minRaw,
-		maxRaw = maxRaw,
-		raw = raw,
 	}
+	if createRaw then
+		metricData[id].minRaw = minRaw
+		metricData[id].maxRaw = maxRaw
+		metricData[id].raw = raw
+	end
 	return metric
 end
 
@@ -341,23 +352,24 @@ if graphData.Interfaces then
 
 	makeMetric("Velocity", function (node)
 		-- Weigh velocity proportionally to fluid interface of each node
+		-- because we want to get an average, and not a sum
 		return node.Velocity * nodeFluidProportion[node.Id + 1]
-	end)
+	end, binOpAdd, false)
 end
 
-local metMainArea = makeMetric("Main Channel Area", function (node)
-	return node.Break and node.Area or 0
-end)
-
-do
-	local ratio = {}
-	for k, v in pairs(metArea) do
-		if metMainArea[k] then
-			ratio[k] = v > 0 and metMainArea[k] / v or 0
-		end
-	end
-	makeMetric("Main Channel Area Ratio", ratio)
-end
+--local metMainArea = makeMetric("Main Channel Area", function (node)
+--	return node.Break and node.Area or 0
+--end)
+--
+--do
+--	local ratio = {}
+--	for k, v in pairs(metArea) do
+--		if metMainArea[k] then
+--			ratio[k] = v > 0 and metMainArea[k] / v or 0
+--		end
+--	end
+--	makeMetric("Main Channel Area Ratio", ratio)
+--end
 
 if graphData.Velocities then
 	local metric = {}
@@ -374,10 +386,9 @@ if graphData.Velocities then
 
 	local maxValue = -math.huge
 	local minValue = math.huge
-	local min, max = math.min, math.max
 	for k, v in pairs(metric) do
-		minValue = min(minValue, v)
-		maxValue = max(maxValue, v)
+		minValue = math.min(minValue, v)
+		maxValue = math.max(maxValue, v)
 	end
 
 	metricData[id] = {
@@ -387,6 +398,14 @@ if graphData.Velocities then
 		name = "Velocity Distribution",
 	}
 end
+
+local metMaxEdgesIn = makeMetric("Max. incoming edges", function (node)
+	return node.EdgesIn
+end, binOpMax, false)
+
+local metMaxEdgesOut = makeMetric("Max. outgoing edges", function (node)
+	return node.EdgesOut
+end, binOpMax, false)
 
 local minRange = graphData.minRange
 local maxRange = graphData.maxRange
@@ -802,7 +821,8 @@ local function drawMetric(metric, metData)
 	
 	draw.text {
 		font = font,
-		text = "" .. metData.max .. " —",
+		text = "" .. ((math.floor(metData.max) == metData.max) and metData.max
+			or string.format("%.2f", metData.max)) .. " —",
 		x = offsetX - sizeFactor * 5,
 		y = sizeFactor * 25,
 		size = sizeFactor * 10,
@@ -863,7 +883,7 @@ local interfaceRects = {} -- array of {.lower, .larger, .color, .marked}
 local function drawNode(node)
 	if (settings.hideUnreachedNodes and node.Time > frameNum) then return end
 
-	local nodeRadius = node.WIn * nodeRadiusFactor + nodeBaseRadius
+	local nodeRadius = (settings.unscaledNodes and 1 or node.WIn) * nodeRadiusFactor + nodeBaseRadius
 
 	local alpha = math.max(color.getA(node.Rad), 50)
 
@@ -990,9 +1010,7 @@ end
 -- Export metrics to CSV file.
 -- ----------------------------------------------------------
 exportMetrics = function ()
-	local filename = frameName:gsub("/", "_")
-	local timestamp = os.date('%Y-%m-%d-%H-%M-%S')
-	filename = filename .. "_" .. timestamp .. ".csv"
+	local filename = frameName:gsub("/", "_") .. ".csv"
 
 	-- Gather metrics and store in CSV file format
 	local content = ""
