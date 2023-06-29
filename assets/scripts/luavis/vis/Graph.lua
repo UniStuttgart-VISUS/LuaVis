@@ -16,11 +16,11 @@ local draw = require "luavis.vis.Draw"
 -- Settings to change input dataset and layout.
 -- ----------------------------------------------------------
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_circular/graph_1_fixed.lua")			-- Circular
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_octagonal/graph_1_fixed.lua")		-- Octagonal
+local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_octagonal/graph_1_fixed.lua")		-- Octagonal
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_triangular/graph_1_fixed.lua")		-- Triangular
 
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-2,M=1/graph_1_fixed.lua")		-- Ca=10-2,M=1
-local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-2,M=10/graph_1_fixed.lua")		-- Ca=10-2,M=10
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-2,M=10/graph_1_fixed.lua")		-- Ca=10-2,M=10
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=0.2/graph_1_fixed.lua")	-- Ca=10-3,M=0.2
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=1/graph_1_fixed.lua")		-- Ca=10-3,M=1
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=10/graph_1_fixed.lua")		-- Ca=10-3,M=10
@@ -95,6 +95,7 @@ setKey("F", "metricFanciness", false, toggle)
 setKey("S", "screenshotMode", false, toggle)
 setKey("C", "smoothGraph", false, toggle)
 setKey("D", "showDebugInfo", false, toggle)
+setKey("Z", "animate", false, toggle)
 
 local printGraph -- forward defined function
 setKey("G", "printGraph", nil, function() printGraph() end)
@@ -1162,7 +1163,11 @@ event.render.add("graph2", "vis", function ()
 		end
 	end
 
-	selectFrame(input.mouseX(), input.mouseDown(1))
+	if settings.animate then
+		frameNum = (frameNum + 1) % frameCnt
+	else
+		selectFrame(input.mouseX(), input.mouseDown(1))
+	end
 	if input.keyPress("P") or input.keyPress("O") then
 		local right = (input.keyPress("P") and not rightToLeft) or (input.keyPress("O") and rightToLeft)
 		local nextFramePos = curFramePos + (right and colWidth or (-colWidth))
