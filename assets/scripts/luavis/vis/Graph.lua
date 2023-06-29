@@ -5,6 +5,7 @@ local gfx = require "system.game.Graphics"
 local input = require "system.game.Input"
 
 local color = require "system.utils.Color"
+local timer = require "system.utils.Timer"
 local utils = require "system.utils.Utilities"
 local vector2 = require "system.utils.Vector2"
 
@@ -15,11 +16,11 @@ local draw = require "luavis.vis.Draw"
 -- Settings to change input dataset and layout.
 -- ----------------------------------------------------------
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_circular/graph_1_fixed.lua")			-- Circular
-local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_octagonal/graph_1_fixed.lua")		-- Octagonal
+--local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_octagonal/graph_1_fixed.lua")		-- Octagonal
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_triangular/graph_1_fixed.lua")		-- Triangular
 
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-2,M=1/graph_1_fixed.lua")		-- Ca=10-2,M=1
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-2,M=10/graph_1_fixed.lua")		-- Ca=10-2,M=10
+local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-2,M=10/graph_1_fixed.lua")		-- Ca=10-2,M=10
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=0.2/graph_1_fixed.lua")	-- Ca=10-3,M=0.2
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=1/graph_1_fixed.lua")		-- Ca=10-3,M=1
 --local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=10/graph_1_fixed.lua")		-- Ca=10-3,M=10
@@ -52,6 +53,8 @@ end
 -- Set keyboard events and related settings.
 -- ----------------------------------------------------------
 local mouseKeys = {}
+lastKey = ""
+lastTime = 0
 settings = {}
 
 local function setKey(keys, name, default, func)
@@ -187,23 +190,47 @@ for i = 1, #edges, 2 do
 end
 
 -- 
+local nodesByTime = {}
+
+for _, node in ipairs(nodes) do
+	nodesByTime[node.Time] = nodesByTime[node.Time] or {}
+	table.insert(nodesByTime[node.Time], node)
+end
+
+-- 
 local currentUID = 0
 local function nextUID()
 	currentUID = currentUID + 1
 	return currentUID
 end
 
-for i, node in ipairs(nodes) do
-	local parent = nodes[node.Parent]
-	node.Uid = parent and parent.Child == i and parent.Uid or nextUID()
+function spairs(t, order)
+    -- collect the keys
+    local keys = {}
+    for k in pairs(t) do keys[#keys+1] = k end
+
+    -- if order function given, sort by it by passing the table and keys a, b,
+    -- otherwise just sort the keys 
+    if order then
+        table.sort(keys, function(a,b) return order(t, a, b) end)
+    else
+        table.sort(keys)
+    end
+
+    -- return the iterator function
+    local i = 0
+    return function()
+        i = i + 1
+        if keys[i] then
+            return keys[i], t[keys[i]]
+        end
+    end
 end
 
--- 
-local nodesByTime = {}
-
-for _, node in ipairs(nodes) do
-	nodesByTime[node.Time] = nodesByTime[node.Time] or {}
-	table.insert(nodesByTime[node.Time], node)
+for _, node in spairs(nodes, function(t, a, b) return t[a].Time < t[b].Time end) do
+	local parent = nodes[node.Parent]
+	--node.Uid = parent and (parent.Child == (node.Id + 1) and parent.EdgesOut == 1) and parent.Uid or nextUID()
+	node.Uid = parent and (parent.Child == (node.Id + 1)) and parent.Uid or nextUID()
 end
 
 -- 
@@ -215,34 +242,38 @@ local function traceMainChannel(node)
 end
 
 -- 
-local breakthrough = 0
+local breakthrough = graphData.breakthroughTime
 
-pcall(function ()
-	local rects = graphData.Rects
-	if rects then
-		for i, r in ipairs(rects) do
-			local x = rightToLeft and r[1] or imgW - r[3]
-			if x < breakthroughThreshold then
-				breakthrough = nodes[i].Time
-				traceMainChannel(nodes[i])
-				break
-			end
-		end
-	end
-end)
+--pcall(function ()
+--	local rects = graphData.Rects
+--	if rects then
+--		for i, r in ipairs(rects) do
+--			local x = rightToLeft and r[1] or imgW - r[3]
+--			if x < breakthroughThreshold then
+--				breakthrough = nodes[i].Time
+--				traceMainChannel(nodes[i])
+--				break
+--			end
+--		end
+--	end
+--end)
 
 -- 
 local allNodes = {}
 local liveNodes = {}
-local preBreakNodes = {}
+local allPreBreakNodes = {}
+local livePreBreakNodes = {}
 
 for i, node in ipairs(nodes) do
 	allNodes[#allNodes + 1] = i
 	if not (node.EdgesIn == 1 and node.EdgesOut == 1) then
 		liveNodes[#liveNodes + 1] = i
 		if node.Time <= breakthrough then
-			preBreakNodes[#preBreakNodes + 1] = i
+			livePreBreakNodes[#livePreBreakNodes + 1] = i
 		end
+	end
+	if node.Time <= breakthrough then
+		allPreBreakNodes[#allPreBreakNodes + 1] = i
 	end
 end
 
@@ -495,7 +526,7 @@ local nodeColorBegin = color.fromTable {60, 255, 60}
 local nodeColorEnd   = color.fromTable {255, 60, 60}
 local nodeColorMulti = color.fromTable {200, 100, 200}
 local nodeColorModified = color.fromTable {255, 237, 160}
-local nodeColorInvis = color.TRANSPARENT
+local nodeColorInvis = color.fromTable {127, 127, 127, 70}
 
 local nodeBaseRadius = 0
 local nodeRadiusFactor = 1
@@ -563,11 +594,14 @@ local function initGraph()
 		node.YCount = false
 
 		-- Node colors
-		local hue = (node.Uid * 0.72 + 10.4) * node.Uid * 0.7
-		local sat = 0.4 + ((node.Uid * 0.8 + .35) * node.Uid) % 0.5
+		math.randomseed(node.Uid)
 
-		node.Color = color.hsv(hue, sat, 1, 1)
-		node.Color2 = color.hsv(hue, sat, 0.8, 0.8)
+		local hue = math.random()
+		local sat = 0.5 + math.random() % 0.5
+		local val = 0.8 + math.random() % 0.2
+
+		node.Color = color.hsv(hue, sat, val, 1)
+		node.Color2 = color.hsv(hue, sat, 0.8 * val, 0.8)
 	end
 
 	if t then
@@ -632,7 +666,7 @@ local function initGraph()
 		if src.X ~= 0 or src.Y ~= 0 then
 			local w = (src.WOut + dst.WOut) * 0.5
 			links[#links + 1] = {source = src, dest = dst, weight = w - 10, time = dst.Time}
-			if src.Time <= breakthrough then
+			if dst.Time <= breakthrough then
 				preBreakLinks[#preBreakLinks + 1] = links[#links]
 			end
 		end
@@ -744,7 +778,7 @@ local function drawMetricUnfancyLog(raw, metric, metData)
 		local fillColor = color.hsv((metData.id * 0.3 + 0.5) % 1, (metData.id * 0.15 + 0.4) % 1, 1, settings.activeMetricID and 0.8 or 0.5)
 
 		gfx.drawBox({offsetX + (k - fMin) * colWidth, metricYOffset, colWidth, -v},
-			color.setA(fillColor, k > breakthrough and 180 or 220))
+			color.setA(fillColor, k ~= frameNum and 70 or 255))
 	end
 end
 
@@ -764,7 +798,7 @@ local function drawMetricUnfancy(metric, metData)
 			local h = height * metVal
 			ys[t] = (ys[t] or (metricYOffset - height * (metric[t + 1] or 0))) + h
 			gfx.drawBox({offsetX + (t - fMin) * colWidth, ys[t] - h, colWidth, h},
-				color.setA(node.Color or -1, t > breakthrough and 180 or 220))
+				color.setA(settings.colorByNodeType and getNodeTypeColor(node) or node.Color, t ~= frameNum and 70 or 255))
 		end
 	end
 end
@@ -782,7 +816,7 @@ local function drawMetricUnfancy2(metric, metData)
 		local metVal = metric[i]
 		if metVal then
 			gfx.drawBox({offsetX + (i - 1 - fMin) * colWidth, metricYOffset - height * metVal, colWidth, metVal * height},
-				color.setA(fillColor, i > breakthrough + 1 and 180 or 220))
+				color.setA(fillColor, i - 1 ~= frameNum and 70 or 255))
 		end
 	end
 end
@@ -918,7 +952,7 @@ local function drawActiveInterfaces()
 	for _, node in ipairs(nodesByTime[frameNum] or {}) do
 		local bbox = graphData.Rects and graphData.Rects[node.Id + 1]
 		if bbox then
-			local col = node.Color
+			local col = settings.colorByNodeType and getNodeTypeColor(node) or node.Color
 			local r = {
 				offsetX + bbox[1] / imgW * graphWidth,
 				offsetY + bbox[2] / imgH * graphHeight,
@@ -944,7 +978,9 @@ local function drawGraph()
 	for _, link in ipairs(settings.hidePostBreakthrough and preBreakLinks or links) do
 		drawLink(link)
 	end
-	for _, i in ipairs(settings.simplify and (settings.hidePostBreakthrough and preBreakNodes or liveNodes) or allNodes) do
+	for _, i in ipairs((settings.simplify and (settings.hidePostBreakthrough and livePreBreakNodes or liveNodes))
+			or (settings.hidePostBreakthrough and allPreBreakNodes or allNodes)) do
+
 		drawNode(nodes[i])
 	end
 	if nodeMapperIndex % #nodeMappers == 0 and settings.showInterfaces then
@@ -1115,9 +1151,9 @@ event.render.add("graph2", "vis", function ()
 		if (x > graphWidth + offsetX) then x = graphWidth + offsetX end
 
 		local newFrame = math.min(frameCnt - 1, math.floor((x - offsetX) / colWidth + 0.5 + frameCnt * minRange))
+		if (settings.hidePostBreakthrough and newFrame > breakthrough) then newFrame = breakthrough end
 
-		if click or (settings.hidePostBreakthrough and newFrame > breakthrough) then
-			if (settings.hidePostBreakthrough and newFrame > breakthrough) then newFrame = breakthrough end
+		if click or (settings.hidePostBreakthrough and frameNum > breakthrough) then
 			if frameNum ~= newFrame then
 				frameNum = newFrame
 
@@ -1146,11 +1182,32 @@ event.render.add("graph2", "vis", function ()
 	drawGraph()
 	drawColorLegend()
 
+	-- Draw last pressed key, fading out
+	if input.text() and input.text()[1] then
+		lastKey = string.char(input.text()[1])
+		lastTime = timer.getGlobalTime()
+	end
+
+	local fadeColor = color.rgba(180, 120, 50, math.min(255, math.max(0, 255 - 0.0005 * (timer.getGlobalTime() - lastTime))))
+
+	draw.circle(vector2(offsetX + graphWidth + 38 * sizeFactor, sizeFactor * 50), sizeFactor * 10, fadeColor, 100, false)
+
+	draw.text {
+		font = font,
+		text = lastKey:upper(),
+		x = offsetX + graphWidth + 31 * sizeFactor,
+		y = sizeFactor * 85,
+		size = sizeFactor * 20,
+		fillColor = fadeColor,
+		alignX = 0,
+		alignY = 1,
+	}
+
 	-- Draw frame and graph information
 	if settings.screenshotMode then
-		gfx.drawBox({offsetX + (frameNum - minRange * frameCnt) * colWidth, 20 * sizeFactor, colWidth, metricHeight + 10}, {0, 0, 0, 255})
+		gfx.drawBox({offsetX + (frameNum - minRange * frameCnt) * colWidth, 20 * sizeFactor, colWidth, metricHeight + 10}, {180, 180, 180, 255})
 	else
-		gfx.drawBox({offsetX + (frameNum - minRange * frameCnt) * colWidth, 20 * sizeFactor, colWidth, metricHeight + 10}, {255, 255, 255, 255})
+		gfx.drawBox({offsetX + (frameNum - minRange * frameCnt) * colWidth, 20 * sizeFactor, colWidth, metricHeight + 10}, {127, 127, 127, 255})
 	end
 
 	draw.text {
