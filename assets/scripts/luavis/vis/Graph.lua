@@ -101,7 +101,8 @@ local printGraph -- forward defined function
 setKey("G", "printGraph", nil, function() printGraph() end)
 
 setKey("", "activeMetricID", 1, function() end)
-setKey({1, 2, 3, 4, 5, 6, 7, 8, 9}, "activeMetricID", 1, function(key, name) settings[name] = tonumber(key) end)
+setKey({0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, "activeMetricID", 1, function(key, name)
+	settings[name] = (tonumber(key) == 0 and 10 or tonumber(key)) end)
 
 local exportMetrics -- forward defined function
 setKey("M", "exportMetrics", nil, function() exportMetrics() end)
@@ -174,6 +175,9 @@ for _, node in ipairs(nodes) do
 	node["Break"] = false
 	node["Color2"] = false
 	node["PosOrigSize"] = false
+	node["MainPos"] = false
+	node["Parents"] = {}
+	node["Children"] = {}
 end
 
 -- set up 1-to-1 parent-child relationships with respective largest areas,
@@ -188,6 +192,8 @@ for i = 1, #edges, 2 do
 	if not child or child.Area < dest.Area then
 		src.Child = dest.Id + 1
 	end
+	table.insert(src.Children, dest.Id + 1)
+	table.insert(dest.Parents, src.Id + 1)
 end
 
 -- 
@@ -235,31 +241,46 @@ for _, node in spairs(nodes, function(t, a, b) return t[a].Time < t[b].Time end)
 end
 
 -- 
+local mainChannelLength = 0
+
 local function traceMainChannel(node)
 	if node then
 		node.Break = true
+		if nodes[node.Parent] then
+			local distance = math.sqrt((node.X - nodes[node.Parent].X)^2 + (node.Y - nodes[node.Parent].Y)^2)
+			mainChannelLength = mainChannelLength + distance
+			nodes[node.Parent].MainPos = node.MainPos + distance
+		end
 		return traceMainChannel(nodes[node.Parent])
 	end
 end
 
--- 
 local breakthrough = graphData.breakthroughTime
 
---pcall(function ()
---	local rects = graphData.Rects
---	if rects then
---		for i, r in ipairs(rects) do
---			local x = rightToLeft and r[1] or imgW - r[3]
---			if x < breakthroughThreshold then
---				breakthrough = nodes[i].Time
---				traceMainChannel(nodes[i])
---				break
---			end
---		end
---	end
---end)
+pcall(function ()
+	local rects = graphData.Rects
+	local breakX = rightToLeft and imgW or 0
+	local breakNode = nil
+	local comp = rightToLeft and function(a,b) return a < b end or function(a,b) return a > b end
+	if rects then
+		for i, r in ipairs(rects) do
+			local x = rightToLeft and r[1] or r[3]
+			if (nodes[i].Time == breakthrough) and comp(x, breakX) then
+				breakX = x
+				breakNode = nodes[i]
+			end
+		end
+		if breakNode then
+			breakNode.MainPos = rightToLeft and 0 or imgW
+			traceMainChannel(breakNode)
+		end
+	end
+end)
 
--- 
+--
+
+
+--
 local allNodes = {}
 local liveNodes = {}
 local allPreBreakNodes = {}
@@ -389,20 +410,6 @@ if graphData.Interfaces then
 	end, binOpAdd, false)
 end
 
---local metMainArea = makeMetric("Main Channel Area", function (node)
---	return node.Break and node.Area or 0
---end)
---
---do
---	local ratio = {}
---	for k, v in pairs(metArea) do
---		if metMainArea[k] then
---			ratio[k] = v > 0 and metMainArea[k] / v or 0
---		end
---	end
---	makeMetric("Main Channel Area Ratio", ratio)
---end
-
 if graphData.Velocities then
 	local metric = {}
 	for ts = 1, graphData.startTime do
@@ -439,6 +446,20 @@ local metMaxEdgesOut = makeMetric("Max. outgoing edges", function (node)
 	return node.EdgesOut
 end, binOpMax, false)
 
+local metMainArea = makeMetric("Main Channel Area", function (node)
+	return node.Break and node.Area or 0
+end)
+
+do
+	local ratio = {}
+	for k, v in pairs(metArea) do
+		if metMainArea[k] then
+			ratio[k] = v > 0 and metMainArea[k] / v or 0
+		end
+	end
+	makeMetric("Main Channel Area Ratio", ratio)
+end
+
 local minRange = graphData.minRange
 local maxRange = graphData.maxRange
 
@@ -457,6 +478,8 @@ local range = maxRange - minRange
 -- ----------------------------------------------------------
 local maxTimestampHeight = 1
 
+local getPosMapper = nil
+
 local nodeMappers = {
 	{
 		posMapper =
@@ -471,28 +494,6 @@ local nodeMappers = {
 	{
 		posMapper =
 			function (node)
-				local y = (node.YCount or node.Y2) / maxTimestampHeight / 3 + 0.5
-				return vector2((node.Time / frameCnt - minRange) / range, y + 0.01)
-			end,
-		radMapper =
-			function ()
-				return 2, 0.1 * math.sqrt(2)
-			end,
-	},
-	{
-		posMapper =
-			function (node)
-				local y = node.Y2 / 40 + 0.5
-				return vector2((node.Time / frameCnt - minRange) / range, y + 0.01)
-			end,
-		radMapper =
-			function ()
-				return 3, 0.1 * math.sqrt(2)
-			end,
-	},
-	{
-		posMapper =
-			function (node)
 				return vector2((node.Time / frameCnt - minRange) / range, node.Y / imgH)
 			end,
 		radMapper =
@@ -500,12 +501,39 @@ local nodeMappers = {
 				return 1.5, 0.2 * math.sqrt(2)
 			end,
 	},
+	{
+		posMapper =
+			function (node)
+				return vector2(((node.Time - (rightToLeft and graphData.endTime or graphData.startTime))
+					/ (graphData.endTime - graphData.startTime)) * (rightToLeft and (-1) or 1), node.Y / imgH)
+			end,
+		radMapper =
+			function ()
+				return 2, 0.5 * math.sqrt(2)
+			end,
+	},
+	{
+		posMapper =
+			function (node)
+				if not node then return vector2(0, 0) end
+				if node.Break then
+					return vector2(node.MainPos / mainChannelLength, 0.1)
+				else
+					local parent = nodes[node.Parent]
+					return getPosMapper(3)(parent) + vector2(0, (node.EdgesIn == 1 and node.EdgesOut == 1) and 0 or 0.03)
+				end
+			end,
+		radMapper =
+			function ()
+				return 1, 0.2 * math.sqrt(2)
+			end,
+	},
 }
 
 nodeMapperIndex = 0
 nodeMapperTargetIndex = 0
 
-local function getPosMapper(index)
+getPosMapper = function(index)
 	if index ~= math.floor(index) then
 		local map1 = nodeMappers[math.floor(index) % #nodeMappers + 1].posMapper
 		local map2 = nodeMappers[math.ceil(index) % #nodeMappers + 1].posMapper
