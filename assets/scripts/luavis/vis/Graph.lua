@@ -175,7 +175,9 @@ for _, node in ipairs(nodes) do
 	node["Break"] = false
 	node["Color2"] = false
 	node["PosOrigSize"] = false
-	node["MainPos"] = false
+	node["Layouts"] = {
+		SimpleBreakthrough = { MainPos = false, Pos = false },
+	}
 	node["Parents"] = {}
 	node["Children"] = {}
 end
@@ -249,7 +251,7 @@ local function traceMainChannel(node)
 		if nodes[node.Parent] then
 			local distance = math.sqrt((node.X - nodes[node.Parent].X)^2 + (node.Y - nodes[node.Parent].Y)^2)
 			mainChannelLength = mainChannelLength + distance
-			nodes[node.Parent].MainPos = node.MainPos + distance
+			nodes[node.Parent].Layouts.SimpleBreakthrough.MainPos = node.Layouts.SimpleBreakthrough.MainPos + distance
 		end
 		return traceMainChannel(nodes[node.Parent])
 	end
@@ -271,7 +273,7 @@ pcall(function ()
 			end
 		end
 		if breakNode then
-			breakNode.MainPos = rightToLeft and 0 or imgW
+			breakNode.Layouts.SimpleBreakthrough.MainPos = rightToLeft and 0 or imgW
 			traceMainChannel(breakNode)
 		end
 	end
@@ -477,7 +479,6 @@ local range = maxRange - minRange
 -- Node mappers hold information for graph layouts.
 -- ----------------------------------------------------------
 local maxTimestampHeight = 1
-
 local getPosMapper = nil
 
 local nodeMappers = {
@@ -514,14 +515,21 @@ local nodeMappers = {
 	},
 	{
 		posMapper =
-			function (node)
+			function(node)
 				if not node then return vector2(0, 0) end
-				if node.Break then
-					return vector2(node.MainPos / mainChannelLength, 0.1)
-				else
-					local parent = nodes[node.Parent]
-					return getPosMapper(3)(parent) + vector2(0, (node.EdgesIn == 1 and node.EdgesOut == 1) and 0 or 0.03)
+				
+				if not node.Layouts.SimpleBreakthrough.Pos then
+					if node.Break then
+						node.Layouts.SimpleBreakthrough.Pos =
+							vector2(node.Layouts.SimpleBreakthrough.MainPos / mainChannelLength, 0.1)
+					else
+						local parent = nodes[node.Parent]
+						node.Layouts.SimpleBreakthrough.Pos = getPosMapper(3)(parent)
+							+ vector2(0, (node.EdgesIn == 1 and node.EdgesOut == 1) and 0 or 0.03)
+					end
 				end
+				
+				return node.Layouts.SimpleBreakthrough.Pos
 			end,
 		radMapper =
 			function ()
