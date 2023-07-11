@@ -108,7 +108,7 @@ local exportMetrics -- forward defined function
 setKey("M", "exportMetrics", nil, function() exportMetrics() end)
 
 local ForceAtlas2Loop -- forward defined function
-setKey("Q", "forceAtlas2Loop", nil, function() ForceAtlas2Loop() end)
+setKey("Q", "forceAtlas2running", true, toggle)
 
 -- ----------------------------------------------------------
 -- Parse input path and set layout.
@@ -512,15 +512,16 @@ local range = maxRange - minRange
 -- ForceAtlas2 graph layout.
 -- ----------------------------------------------------------
 local FA2Params = {
-	scalingRatio = 20,
-	gravity = -0.1,
-	jitterTolerance = 1,
+	scalingRatio = 50,
+	gravity = 0.5,
+	jitterTolerance = 0.1,
 	baseMass = 1,
 }
 
 -- initialize
 local outboundCompensation = 0
-local center = vector2(imgW / 2, imgH / 2)
+local g1 = imgH / 3
+local g2 = 2 * g1
 
 for _, node in ipairs(simplifiedNodes) do
 	if node.Layouts.MainChannel.Pos then
@@ -559,7 +560,9 @@ local function repulsionNodeNode(n1, n2)
 end
 
 local function repulsionGravity(n)
-	local dist = vector2(0, n.Layouts.ForceAtlas2.Pos.y - center.y)
+	local dist1 = vector2(0, n.Layouts.ForceAtlas2.Pos.y - g1)
+	local dist2 = vector2(0, n.Layouts.ForceAtlas2.Pos.y - g2)
+	local dist = dist1:length() < dist2:length() and dist1 or dist2
 	local distance = dist:length()
 
 	if distance > 0 then
@@ -661,12 +664,19 @@ local function ForceAtlas2()
 end
 
 -- call ForceAtlas2 until convergence
-ForceAtlas2Loop = function()
-	for i = 1, 100 do
-		ForceAtlas2()
+ForceAtlas2Loop = coroutine.create(
+	function()
+		while true do
+			if settings.forceAtlas2running then
+				for i = 1, 5 do
+					ForceAtlas2()
+				end
+			end
+			requestGraphReload = true
+			coroutine.yield()
+		end
 	end
-	requestGraphReload = true
-end
+)
 
 -- ----------------------------------------------------------
 -- Node mappers hold information for graph layouts.
@@ -686,6 +696,7 @@ local nodeMappers = {
 			end,
 		interpolatable = true,
 		simplifiedOnly = false,
+		iterative = function() end,
 	},
 	{
 		posMapper =
@@ -698,6 +709,7 @@ local nodeMappers = {
 			end,
 		interpolatable = true,
 		simplifiedOnly = false,
+		iterative = function() end,
 	},
 	{
 		posMapper =
@@ -711,6 +723,7 @@ local nodeMappers = {
 			end,
 		interpolatable = true,
 		simplifiedOnly = false,
+		iterative = function() end,
 	},
 	{
 		posMapper =
@@ -723,6 +736,7 @@ local nodeMappers = {
 			end,
 		interpolatable = false,
 		simplifiedOnly = true,
+		iterative = function() coroutine.resume(ForceAtlas2Loop) end,
 	},
 	{
 		posMapper =
@@ -748,6 +762,7 @@ local nodeMappers = {
 			end,
 		interpolatable = true,
 		simplifiedOnly = false,
+		iterative = function() end,
 	},
 }
 
@@ -771,13 +786,16 @@ getPosMapper = function(index)
 			false
 		else
 			if mapper1.interpolatable then
+				mapper2.iterative()
 				return mapper2.posMapper, mapper2.radMapper, mapper2.simplifiedOnly
 			else
+				mapper1.iterative()
 				return mapper1.posMapper, mapper1.radMapper, mapper1.simplifiedOnly
 			end
 		end
 	else
 		local mapper = nodeMappers[index % #nodeMappers + 1]
+		mapper.iterative()
 		return mapper.posMapper, mapper.radMapper, mapper.simplifiedOnly
 	end
 end
@@ -823,6 +841,8 @@ local function getNodeTypeColor(node)
 	end
 end
 
+currentPosMapper, currentRadMapper, currentSimplified = 0, 0, 0
+
 local function initGraph()
 	local t
 	local y = 0
@@ -833,9 +853,9 @@ local function initGraph()
 		nodeMapperIndex = nodeMapperTargetIndex
 	end
 
-	local posMapper, radMapper = getPosMapper(nodeMapperIndex)
-	if radMapper then
-		nodeBaseRadius, nodeRadiusFactor = radMapper()
+	local currentPosMapper, currentRadMapper, currentSimplified = getPosMapper(nodeMapperIndex)
+	if currentRadMapper then
+		nodeBaseRadius, nodeRadiusFactor = currentRadMapper()
 	end
 	
 	local wSize = vector2(graphWidth, graphHeight)
@@ -910,8 +930,8 @@ local function initGraph()
 	end
 
 	for _, node in ipairs(nodes) do
-		node.Pos = vector2(offsetX, offsetY) + posMapper(node) * wSize
-		node.PosOrigSize = posMapper(node) * imgSize
+		node.Pos = vector2(offsetX, offsetY) + currentPosMapper(node) * wSize
+		node.PosOrigSize = currentPosMapper(node) * imgSize
 
 		local col = utils.clamp(0, (node.Time - frameNum) + 0.5, 1)
 		local a = col % 1 * 0.5 + 0.75
@@ -1238,9 +1258,7 @@ local function drawGraph()
 	linkLines = {}
 	interfaceRects = {}
 
-	local _, _, simplified = getPosMapper(nodeMapperIndex)
-
-	if not simplified then
+	if not currentSimplified then
 		for _, link in ipairs(settings.hidePostBreakthrough and preBreakLinks or links) do
 			drawLink(link)
 		end
