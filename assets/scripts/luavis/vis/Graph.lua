@@ -107,6 +107,9 @@ setKey({0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, "activeMetricID", 1, function(key, name)
 local exportMetrics -- forward defined function
 setKey("M", "exportMetrics", nil, function() exportMetrics() end)
 
+local ForceAtlas2Loop -- forward defined function
+setKey("Q", "forceAtlas2Loop", nil, function() ForceAtlas2Loop() end)
+
 -- ----------------------------------------------------------
 -- Parse input path and set layout.
 -- ----------------------------------------------------------
@@ -126,6 +129,8 @@ local font = draw.Font.SEGOE_SEMIBOLD
 
 frameCnt = 1
 frameNum = 1
+
+local requestGraphReload = false
 
 -- ----------------------------------------------------------
 -- Load image and graph information, and fix graph.
@@ -176,7 +181,9 @@ for _, node in ipairs(nodes) do
 	node["Color2"] = false
 	node["PosOrigSize"] = false
 	node["Layouts"] = {
-		SimpleBreakthrough = { MainPos = false, Pos = false },
+		MainChannel = { Pos = false, Index = 0 },
+		SimpleBreakthrough = { Pos = false },
+		ForceAtlas2 = { Pos = false, mass = false, old_d = false, d = false },
 	}
 	node["Parents"] = {}
 	node["Children"] = {}
@@ -196,6 +203,33 @@ for i = 1, #edges, 2 do
 	end
 	table.insert(src.Children, dest.Id + 1)
 	table.insert(dest.Parents, src.Id + 1)
+end
+
+--
+local simplifiedNodes = {}
+local simplifiedEdges = {}
+
+local tempNodes = {}
+
+for i = 1, #edges, 2 do
+	local src, dst = nodes[edges[i] + 1], nodes[edges[i + 1] + 1]
+
+	while src.EdgesIn == 1 and src.EdgesOut == 1 do
+		src = nodes[src.Parent]
+	end
+	while dst.EdgesIn == 1 and dst.EdgesOut == 1 do
+		dst = nodes[dst.Child]
+	end
+
+	tempNodes[src.Id + 1] = src
+	tempNodes[dst.Id + 1] = dst
+
+	table.insert(simplifiedEdges, src.Id + 1)
+	table.insert(simplifiedEdges, dst.Id + 1)
+end
+
+for _, node in pairs(tempNodes) do
+	table.insert(simplifiedNodes, node)
 end
 
 -- 
@@ -245,15 +279,17 @@ end
 -- 
 local mainChannelLength = 0
 
-local function traceMainChannel(node)
+local function traceMainChannel(node, index)
+	index = index or 0
 	if node then
 		node.Break = true
+		node.Index = index
 		if nodes[node.Parent] then
 			local distance = math.sqrt((node.X - nodes[node.Parent].X)^2 + (node.Y - nodes[node.Parent].Y)^2)
 			mainChannelLength = mainChannelLength + distance
-			nodes[node.Parent].Layouts.SimpleBreakthrough.MainPos = node.Layouts.SimpleBreakthrough.MainPos + distance
+			nodes[node.Parent].Layouts.MainChannel.Pos = node.Layouts.MainChannel.Pos + distance
 		end
-		return traceMainChannel(nodes[node.Parent])
+		return traceMainChannel(nodes[node.Parent], index + 1)
 	end
 end
 
@@ -273,14 +309,11 @@ pcall(function ()
 			end
 		end
 		if breakNode then
-			breakNode.Layouts.SimpleBreakthrough.MainPos = rightToLeft and 0 or imgW
+			breakNode.Layouts.MainChannel.Pos = rightToLeft and 0 or imgW
 			traceMainChannel(breakNode)
 		end
 	end
 end)
-
---
-
 
 --
 local allNodes = {}
@@ -476,6 +509,166 @@ end
 local range = maxRange - minRange
 
 -- ----------------------------------------------------------
+-- ForceAtlas2 graph layout.
+-- ----------------------------------------------------------
+local FA2Params = {
+	scalingRatio = 20,
+	gravity = -0.1,
+	jitterTolerance = 1,
+	baseMass = 1,
+}
+
+-- initialize
+local outboundCompensation = 0
+local center = vector2(imgW / 2, imgH / 2)
+
+for _, node in ipairs(simplifiedNodes) do
+	if node.Layouts.MainChannel.Pos then
+		node.Layouts.ForceAtlas2.Pos = vector2(node.Layouts.MainChannel.Pos
+			/ mainChannelLength, 0.5):multiply(vector2(imgW, imgH))
+	else
+		node.Layouts.ForceAtlas2.Pos = vector2(node.X, node.Y)
+		-- todo: better start layout?
+	end
+
+	node.Layouts.ForceAtlas2.mass = FA2Params.baseMass + node.EdgesIn + node.EdgesOut
+	node.Layouts.ForceAtlas2.old_d = vector2(0, 0)
+	node.Layouts.ForceAtlas2.d = vector2(0, 0)
+
+	outboundCompensation = outboundCompensation + node.Layouts.ForceAtlas2.mass
+end
+
+outboundCompensation = outboundCompensation / #simplifiedNodes
+
+-- functions for calculating repulsing and attracting forces
+local function repulsionNodeNode(n1, n2)
+	local dist = n1.Layouts.ForceAtlas2.Pos:subtract(n2.Layouts.ForceAtlas2.Pos)
+	local distance = dist:length() - (n1.WIn + n1.WOut + n2.WIn + n2.WOut) -- 1.5 is the approximate radius of a node
+
+	local factor = FA2Params.scalingRatio * n1.Layouts.ForceAtlas2.mass
+			* n2.Layouts.ForceAtlas2.mass
+
+	if distance > 0 then
+		factor = factor / (distance * distance);
+	elseif distance < 0 then
+		factor = factor * 100
+	end
+
+    n1.Layouts.ForceAtlas2.d = n1.Layouts.ForceAtlas2.d:add(dist:multiply(factor))
+    n2.Layouts.ForceAtlas2.d = n2.Layouts.ForceAtlas2.d:subtract(dist:multiply(factor))
+end
+
+local function repulsionGravity(n)
+	local dist = vector2(0, n.Layouts.ForceAtlas2.Pos.y - center.y)
+	local distance = dist:length()
+
+	if distance > 0 then
+		local factor = FA2Params.scalingRatio * n.Layouts.ForceAtlas2.mass
+			* FA2Params.gravity / distance
+		
+		n.Layouts.ForceAtlas2.d = n.Layouts.ForceAtlas2.d:subtract(dist:multiply(factor))
+	end
+end
+
+local function attractionNodeNode(n1, n2)
+	local dist = n1.Layouts.ForceAtlas2.Pos:subtract(n2.Layouts.ForceAtlas2.Pos)
+	local distance = dist:length() - (n1.WIn + n1.WOut + n2.WIn + n2.WOut) -- 1.5 is the approximate radius of a node
+
+	if distance > 0 then
+		local factor = -outboundCompensation / (0.5 * (n1.Layouts.ForceAtlas2.mass + n2.Layouts.ForceAtlas2.mass))
+
+		n1.Layouts.ForceAtlas2.d = n1.Layouts.ForceAtlas2.d:add(dist:multiply(factor))
+		n2.Layouts.ForceAtlas2.d = n2.Layouts.ForceAtlas2.d:subtract(dist:multiply(factor))
+	end
+end
+
+local function ForceAtlas2()
+	-- initialize
+	local speed = 1
+	local speedEfficiency = 1
+
+	for _, node in ipairs(simplifiedNodes) do
+		node.Layouts.ForceAtlas2.old_d = node.Layouts.ForceAtlas2.d
+		node.Layouts.ForceAtlas2.d = vector2(0, 0)
+	end
+
+	-- get forces
+	for i = 2, #simplifiedNodes do
+		for j = 1, i - 1 do
+			repulsionNodeNode(simplifiedNodes[i], simplifiedNodes[j])
+		end
+	end
+
+	for _, node in ipairs(simplifiedNodes) do
+		repulsionGravity(node)
+	end
+
+	for i = 1, #simplifiedEdges, 2 do
+		attractionNodeNode(nodes[simplifiedEdges[i]], nodes[simplifiedEdges[i + 1]])
+	end
+	
+	-- adjust speed
+	local totalSwinging = 0
+    local totalEffectiveTraction = 0
+    for _, node in ipairs(simplifiedNodes) do
+        if (not node.Layouts.MainChannel.Pos) then
+            local swinging = node.Layouts.ForceAtlas2.old_d:subtract(node.Layouts.ForceAtlas2.d):length()
+            totalSwinging = totalSwinging + node.Layouts.ForceAtlas2.mass * swinging;
+            totalEffectiveTraction = totalEffectiveTraction + node.Layouts.ForceAtlas2.mass * 0.5
+				* node.Layouts.ForceAtlas2.old_d:add(node.Layouts.ForceAtlas2.d):length()
+        end
+    end
+
+	local estimatedOptimalJitterTolerance = 0.05 * math.sqrt(#simplifiedNodes);
+    local minJT = math.sqrt(estimatedOptimalJitterTolerance);
+    local jt = FA2Params.jitterTolerance * math.max(minJT, math.min(10,
+		estimatedOptimalJitterTolerance * totalEffectiveTraction / math.pow(#simplifiedNodes, 2)));
+
+	if totalSwinging / totalEffectiveTraction > 2.0 then
+        if speedEfficiency > 0.05 then
+            speedEfficiency = speedEfficiency * 0.5
+        end
+
+        jt = math.max(jt, FA2Params.jitterTolerance);
+    end
+
+    local targetSpeed = jt * speedEfficiency * totalEffectiveTraction / totalSwinging;
+
+	if totalSwinging > jt * totalEffectiveTraction then
+        if speedEfficiency > 0.05 then
+            speedEfficiency = speedEfficiency * 0.7
+        end
+    elseif speed < 1000 then
+        speedEfficiency = speedEfficiency * 1.3;
+    end
+
+	speed = speed + math.min(targetSpeed - speed, 0.5 * speed);
+
+	-- apply forces
+	for _, node in ipairs(simplifiedNodes) do
+		if (not node.Layouts.MainChannel.Pos) then
+			local swinging = node.Layouts.ForceAtlas2.mass *
+				node.Layouts.ForceAtlas2.old_d:subtract(node.Layouts.ForceAtlas2.d):length()
+			local factor = 0.1 * speed / (1 + math.sqrt(speed * swinging))
+
+			local df = node.Layouts.ForceAtlas2.d:length()
+			factor = math.min(factor * df, 10) / df
+
+			node.Layouts.ForceAtlas2.Pos = node.Layouts.ForceAtlas2.Pos:add(
+				node.Layouts.ForceAtlas2.d:multiply(factor))
+		end
+	end
+end
+
+-- call ForceAtlas2 until convergence
+ForceAtlas2Loop = function()
+	for i = 1, 100 do
+		ForceAtlas2()
+	end
+	requestGraphReload = true
+end
+
+-- ----------------------------------------------------------
 -- Node mappers hold information for graph layouts.
 -- ----------------------------------------------------------
 local maxTimestampHeight = 1
@@ -491,6 +684,8 @@ local nodeMappers = {
 			function ()
 				return 2, 0.5 * math.sqrt(2)
 			end,
+		interpolatable = true,
+		simplifiedOnly = false,
 	},
 	{
 		posMapper =
@@ -501,6 +696,8 @@ local nodeMappers = {
 			function ()
 				return 1.5, 0.2 * math.sqrt(2)
 			end,
+		interpolatable = true,
+		simplifiedOnly = false,
 	},
 	{
 		posMapper =
@@ -512,6 +709,20 @@ local nodeMappers = {
 			function ()
 				return 2, 0.5 * math.sqrt(2)
 			end,
+		interpolatable = true,
+		simplifiedOnly = false,
+	},
+	{
+		posMapper =
+			function(node)
+				return node.Layouts.ForceAtlas2.Pos and node.Layouts.ForceAtlas2.Pos:divide(vector2(imgW, imgH)) or 0
+			end,
+		radMapper =
+			function ()
+				return 1, 0.2 * math.sqrt(2)
+			end,
+		interpolatable = false,
+		simplifiedOnly = true,
 	},
 	{
 		posMapper =
@@ -521,10 +732,10 @@ local nodeMappers = {
 				if not node.Layouts.SimpleBreakthrough.Pos then
 					if node.Break then
 						node.Layouts.SimpleBreakthrough.Pos =
-							vector2(node.Layouts.SimpleBreakthrough.MainPos / mainChannelLength, 0.1)
+							vector2(node.Layouts.MainChannel.Pos / mainChannelLength, 0.1)
 					else
 						local parent = nodes[node.Parent]
-						node.Layouts.SimpleBreakthrough.Pos = getPosMapper(3)(parent)
+						node.Layouts.SimpleBreakthrough.Pos = getPosMapper(4)(parent)
 							+ vector2(0, (node.EdgesIn == 1 and node.EdgesOut == 1) and 0 or 0.03)
 					end
 				end
@@ -535,6 +746,8 @@ local nodeMappers = {
 			function ()
 				return 1, 0.2 * math.sqrt(2)
 			end,
+		interpolatable = true,
+		simplifiedOnly = false,
 	},
 }
 
@@ -543,14 +756,29 @@ nodeMapperTargetIndex = 0
 
 getPosMapper = function(index)
 	if index ~= math.floor(index) then
-		local map1 = nodeMappers[math.floor(index) % #nodeMappers + 1].posMapper
-		local map2 = nodeMappers[math.ceil(index) % #nodeMappers + 1].posMapper
-		local fac = index - math.floor(index)
-		return function (node)
-			return map1(node) * (1 - fac) + map2(node) * fac
+		local mapper1 = nodeMappers[math.floor(index) % #nodeMappers + 1]
+		local mapper2 = nodeMappers[math.ceil(index) % #nodeMappers + 1]
+		if mapper1.interpolatable and mapper2.interpolatable then
+			local fac = index - math.floor(index)
+			return function (node)
+				return mapper1.posMapper(node) * (1 - fac) + mapper2.posMapper(node) * fac
+			end,
+			function ()
+				local a1, b1 = mapper1.radMapper()
+				local a2, b2 = mapper2.radMapper()
+				return a1 * (1 - fac) + a2 * fac, b1 * (1 - fac) + b2 * fac
+			end,
+			false
+		else
+			if mapper1.interpolatable then
+				return mapper2.posMapper, mapper2.radMapper, mapper2.simplifiedOnly
+			else
+				return mapper1.posMapper, mapper1.radMapper, mapper1.simplifiedOnly
+			end
 		end
 	else
-		return nodeMappers[index % #nodeMappers + 1].posMapper
+		local mapper = nodeMappers[index % #nodeMappers + 1]
+		return mapper.posMapper, mapper.radMapper, mapper.simplifiedOnly
 	end
 end
 
@@ -599,19 +827,17 @@ local function initGraph()
 	local t
 	local y = 0
 
-	local radMapper = nodeMappers[(nodeMapperTargetIndex) % #nodeMappers + 1].radMapper
-	if radMapper then
-		nodeBaseRadius, nodeRadiusFactor = radMapper()
-	end
-	
 	if math.abs(nodeMapperIndex - nodeMapperTargetIndex) > 0.001 then
 		nodeMapperIndex = utils.lerp(nodeMapperIndex, nodeMapperTargetIndex, 0.25)
 	else
 		nodeMapperIndex = nodeMapperTargetIndex
 	end
 
-	local posMapper = getPosMapper(nodeMapperIndex)
-
+	local posMapper, radMapper = getPosMapper(nodeMapperIndex)
+	if radMapper then
+		nodeBaseRadius, nodeRadiusFactor = radMapper()
+	end
+	
 	local wSize = vector2(graphWidth, graphHeight)
 
 	local timestampHeight = {}
@@ -1012,16 +1238,32 @@ local function drawGraph()
 	linkLines = {}
 	interfaceRects = {}
 
-	for _, link in ipairs(settings.hidePostBreakthrough and preBreakLinks or links) do
-		drawLink(link)
-	end
-	for _, i in ipairs((settings.simplify and (settings.hidePostBreakthrough and livePreBreakNodes or liveNodes))
-			or (settings.hidePostBreakthrough and allPreBreakNodes or allNodes)) do
+	local _, _, simplified = getPosMapper(nodeMapperIndex)
 
-		drawNode(nodes[i])
-	end
-	if nodeMapperIndex % #nodeMappers == 0 and settings.showInterfaces then
-		drawActiveInterfaces()
+	if not simplified then
+		for _, link in ipairs(settings.hidePostBreakthrough and preBreakLinks or links) do
+			drawLink(link)
+		end
+		for _, i in ipairs((settings.simplify and (settings.hidePostBreakthrough and livePreBreakNodes or liveNodes))
+				or (settings.hidePostBreakthrough and allPreBreakNodes or allNodes)) do
+
+			drawNode(nodes[i])
+		end
+		if nodeMapperIndex % #nodeMappers == 0 and settings.showInterfaces then
+			drawActiveInterfaces()
+		end
+	else
+		for i = 1, #simplifiedEdges, 2 do
+			local src = nodes[simplifiedEdges[i]]
+			local dst = nodes[simplifiedEdges[i + 1]]
+			if src.X ~= 0 or src.Y ~= 0 then
+				local w = (src.WOut + dst.WOut) * 0.5
+				drawLink({source = src, dest = dst, weight = w - 10, time = dst.Time})
+			end
+		end
+		for _, node in ipairs(simplifiedNodes) do
+			drawNode(node)
+		end
 	end
 end
 
@@ -1126,7 +1368,8 @@ end
 -- Register render callback for actual rendering.
 -- ----------------------------------------------------------
 event.render.add("graph2", "vis", function ()
-	local needsGraphReload = false
+	local needsGraphReload = requestGraphReload
+	requestGraphReload = false
 
 	-- Create image cache when input path changed
 	if imgCacheDir ~= imgDir then
