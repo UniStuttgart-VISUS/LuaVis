@@ -96,6 +96,7 @@ setKey("S", "screenshotMode", false, toggle)
 setKey("C", "smoothGraph", false, toggle)
 setKey("D", "showDebugInfo", false, toggle)
 setKey("Z", "animate", false, toggle)
+setKey("V", "visibleImage", true, toggle)
 
 local printGraph -- forward defined function
 setKey("G", "printGraph", nil, function() printGraph() end)
@@ -510,6 +511,8 @@ local range = maxRange - minRange
 
 -- ----------------------------------------------------------
 -- ForceAtlas2 graph layout.
+-- Original code from:
+-- https://github.com/gephi/gephi/tree/master/modules/LayoutPlugin/src/main/java/org/gephi/layout/plugin/forceAtlas2
 -- ----------------------------------------------------------
 local FA2Params = {
 	scalingRatio = 50,
@@ -775,15 +778,16 @@ getPosMapper = function(index)
 		local mapper2 = nodeMappers[math.ceil(index) % #nodeMappers + 1]
 		if mapper1.interpolatable and mapper2.interpolatable then
 			local fac = index - math.floor(index)
-			return function (node)
-				return mapper1.posMapper(node) * (1 - fac) + mapper2.posMapper(node) * fac
-			end,
-			function ()
-				local a1, b1 = mapper1.radMapper()
-				local a2, b2 = mapper2.radMapper()
-				return a1 * (1 - fac) + a2 * fac, b1 * (1 - fac) + b2 * fac
-			end,
-			false
+			return
+				function (node)
+					return mapper1.posMapper(node) * (1 - fac) + mapper2.posMapper(node) * fac
+				end,
+				function ()
+					local a1, b1 = mapper1.radMapper()
+					local a2, b2 = mapper2.radMapper()
+					return a1 * (1 - fac) + a2 * fac, b1 * (1 - fac) + b2 * fac
+				end,
+				false
 		else
 			if mapper1.interpolatable then
 				mapper2.iterative()
@@ -853,7 +857,7 @@ local function initGraph()
 		nodeMapperIndex = nodeMapperTargetIndex
 	end
 
-	local currentPosMapper, currentRadMapper, currentSimplified = getPosMapper(nodeMapperIndex)
+	currentPosMapper, currentRadMapper, currentSimplified = getPosMapper(nodeMapperIndex)
 	if currentRadMapper then
 		nodeBaseRadius, nodeRadiusFactor = currentRadMapper()
 	end
@@ -1481,6 +1485,14 @@ event.render.add("graph2", "vis", function ()
 	end
 
 	drawImage()
+	
+	local visibleImage = settings.visibleImage and nodeMapperTargetIndex % #nodeMappers == 0
+	if not visibleImage and settings.screenshotMode then
+		gfx.drawBox({offsetX, offsetY, graphWidth, graphHeight}, {255, 255, 255, 255})
+	elseif not visibleImage then
+		gfx.drawBox({offsetX, offsetY, graphWidth, graphHeight}, {30, 30, 30, 255})
+	end
+
 	drawGraph()
 	drawColorLegend()
 
