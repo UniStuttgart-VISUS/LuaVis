@@ -15,38 +15,12 @@ local draw = require "luavis.vis.Draw"
 -- ----------------------------------------------------------
 -- Settings to change input dataset and layout.
 -- ----------------------------------------------------------
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_circular/graph_1_fixed.lua")			-- Circular
-local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_octagonal/graph_1_fixed.lua")		-- Octagonal
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_triangular/graph_1_fixed.lua")		-- Triangular
+local graphData = dofile("assets/scripts/luavis/vis/example/graph.lua")
 
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-2,M=1/graph_1_fixed.lua")		-- Ca=10-2,M=1
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-2,M=10/graph_1_fixed.lua")		-- Ca=10-2,M=10
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=0.2/graph_1_fixed.lua")	-- Ca=10-3,M=0.2
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=1/graph_1_fixed.lua")		-- Ca=10-3,M=1
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-3,M=10/graph_1_fixed.lua")		-- Ca=10-3,M=10
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-4,M=0.2/graph_1_fixed.lua")	-- Ca=10-4,M=0.2
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-4,M=1/graph_1_fixed.lua")		-- Ca=10-4,M=1
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-4,M=10/graph_1_fixed.lua")		-- Ca=10-4,M=10
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-5,M=0.2/graph_1_fixed.lua")	-- Ca=10-5,M=0.2
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-5,M=1/graph_1_fixed.lua")		-- Ca=10-5,M=1
---local graphData = dofile("assets/scripts/luavis/vis/graphs/graph_Ca=10-5,M=10/graph_1_fixed.lua")		-- Ca=10-5,M=10
-
-local fileMap = {
-	{ path = "T:/temp/adrian/Dataset1png", dir = "gfx_1", rtl = true },
-	{ path = "T:/temp/adrian/NewDataset", dir = "gfx_2", rtl = false },
-	{ path = "S:/Daten/Flow/porous-media_experiment/nikos", dir = "gfx_3", rtl = true }
-}
-
-local imgDir = "unknown"
+local imgDir = graphData.imgDir
 local rightToLeft = true
-for _, dataset in ipairs(fileMap) do
-	local dir = graphData.imgDir
-	dir = dir:gsub(dataset.path, dataset.dir)
-
-	if dir:find(dataset.dir) then
-		imgDir = dir:match("(" .. dataset.dir .. "/.*/)[^/]*$")
-		rightToLeft = dataset.rtl
-	end
+if graphData.rightToLeft ~= nil then
+	rightToLeft = graphData.rightToLeft
 end
 
 -- ----------------------------------------------------------
