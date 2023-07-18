@@ -13,7 +13,7 @@
 #endif
 
 #ifndef WOS_APPLICATION_NAME
-#	define WOS_APPLICATION_NAME WorldOfSand
+#	define WOS_APPLICATION_NAME LuaVis
 #endif
 
 #define WOS_SYMBOL_TO_STRING_IMPL(SYMBOL) #SYMBOL

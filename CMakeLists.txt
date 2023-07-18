@@ -8,11 +8,6 @@ if(NOT DEFINED CMAKE_BUILD_TYPE)
    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build (Debug, Release, RelWithDebInfo, MinSizeRel)")
 endif()
 
-# Switch between building client and server
-if(NOT DEFINED WOS_BUILD_CLIENT)
-   set(WOS_BUILD_CLIENT true CACHE BOOL "Choose whether the client (true) or server (false) should be built")
-endif()
-
 # Use ccache if possible
 if(NOT DEFINED CMAKE_CXX_COMPILER_LAUNCHER)
 	find_program(CCACHE_FOUND "ccache")
@@ -21,7 +16,7 @@ if(NOT DEFINED CMAKE_CXX_COMPILER_LAUNCHER)
 	endif()
 endif()
 
-project(WorldOfSand)
+project(LuaVis)
 
 # Detect and enable C++14 support and disable compiler-specific extensions
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
@@ -37,12 +32,8 @@ file(GLOB_RECURSE SOURCES "src/Shared/*.cpp" "src/Shared/*.c")
 set(SOURCES ${SOURCES} "src/Version.cpp")
 
 # Add client source files
-if(WOS_BUILD_CLIENT)
-	file(GLOB_RECURSE WOS_CLIENT_SOURCES "src/Client/*.cpp" "src/Client/*.c")
-	set(SOURCES ${SOURCES} ${WOS_CLIENT_SOURCES} "src/MainClient.cpp")
-else()
-	set(SOURCES ${SOURCES} "src/MainServer.cpp")
-endif()
+file(GLOB_RECURSE CLIENT_SOURCES "src/Client/*.cpp" "src/Client/*.c")
+set(SOURCES ${SOURCES} ${CLIENT_SOURCES} "src/MainClient.cpp")
 
 # Set executable output path
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -50,39 +41,17 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 # Set executable name
 set(EXECUTABLE_NAME "LuaVis")
 
-if(APPLE)
-	# Special handling for RPATH on MacOS
-	set(CMAKE_MACOSX_RPATH ON)
-	set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
-	set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
-	set(CMAKE_INSTALL_PREFIX "install")
-	set(CMAKE_INSTALL_RPATH ".")
-else()
-	# Disable CMake's own RPATH handling
-	set(CMAKE_SKIP_RPATH ON)
-endif()
+# Disable CMake's own RPATH handling
+set(CMAKE_SKIP_RPATH ON)
 
 # Define executable
 add_executable(${EXECUTABLE_NAME} WIN32 MACOSX_BUNDLE ${SOURCES})
 
-# Define installation target
-if(APPLE)
-	install(TARGETS ${EXECUTABLE_NAME} BUNDLE DESTINATION ".")
-endif()
-
 # Detect and add SFML
-if(WOS_BUILD_CLIENT)
-	find_package(SFML 2.5 COMPONENTS audio graphics window network system REQUIRED)
-	if(SFML_FOUND)
-		include_directories(${SFML_INCLUDE_DIR})
-		target_link_libraries(${EXECUTABLE_NAME} sfml-graphics sfml-window sfml-audio sfml-network sfml-system)
-	endif()
-else()
-	find_package(SFML 2.5 COMPONENTS network system REQUIRED)
-	if(SFML_FOUND)
-		include_directories(${SFML_INCLUDE_DIR})
-		target_link_libraries(${EXECUTABLE_NAME} sfml-network sfml-system)
-	endif()
+find_package(SFML 2.5 COMPONENTS audio graphics window network system REQUIRED)
+if(SFML_FOUND)
+	include_directories(${SFML_INCLUDE_DIR})
+	target_link_libraries(${EXECUTABLE_NAME} sfml-graphics sfml-window sfml-audio sfml-network sfml-system)
 endif()
 
 # Detect and add CppFS
@@ -93,16 +62,10 @@ if(cppfs_FOUND)
 endif()
 
 # Detect and add OpenGL
-if(WOS_BUILD_CLIENT)
-	find_package(OpenGL REQUIRED)
-	if(OPENGL_FOUND)
-		include_directories(${OPENGL_INCLUDE_DIRS})
-		if(APPLE)
-			target_link_libraries(${EXECUTABLE_NAME} ${OPENGL_LIBRARIES})
-		else()
-			target_link_libraries(${EXECUTABLE_NAME} OpenGL::GL)
-		endif()
-	endif()
+find_package(OpenGL REQUIRED)
+if(OPENGL_FOUND)
+	include_directories(${OPENGL_INCLUDE_DIRS})
+	target_link_libraries(${EXECUTABLE_NAME} OpenGL::GL)
 endif()
 
 # Detect and add zlib
@@ -114,27 +77,24 @@ endif()
 
 # Detect and add cURL
 find_package(CURL)
-if(NOT DEFINED WOS_ENABLE_CURL)
-	set(WOS_ENABLE_CURL ${CURL_FOUND} CACHE BOOL "Enable libcurl integration for HTTP downloads")
+if(NOT DEFINED LUAVIS_ENABLE_CURL)
+	set(LUAVIS_ENABLE_CURL ${CURL_FOUND} CACHE BOOL "Enable libcurl integration for HTTP downloads")
 endif()
 
 # Add cURL as an optional dependency
-if(WOS_ENABLE_CURL)
+if(LUAVIS_ENABLE_CURL)
 	if(CURL_FOUND)
 		include_directories(${CURL_INCLUDE_DIRS})
 		target_link_libraries(${EXECUTABLE_NAME} CURL::libcurl)
 	else()
 		message(FATAL_ERROR "Curl integration was requested, but libcurl could not be found")
 	endif()
-	set_property(SOURCE "src/Shared/Network/HTTP/CurlHTTPClient.cpp" APPEND PROPERTY COMPILE_DEFINITIONS WOS_ENABLE_CURL)
+	set_property(SOURCE "src/Shared/Network/HTTP/CurlHTTPClient.cpp" APPEND PROPERTY COMPILE_DEFINITIONS LUAVIS_ENABLE_CURL)
 endif()
 
 # Detect and add LuaJIT
 find_package(LuaJIT REQUIRED)
 if(LUAJIT_FOUND)
-	if(APPLE AND "${CMAKE_OSX_ARCHITECTURES}" STREQUAL "x86_64")
-		set_target_properties(${EXECUTABLE_NAME} PROPERTIES LINK_FLAGS "-pagezero_size 10000 -image_base 100000000")
-	endif()
     include_directories(${LUAJIT_INCLUDE_DIR})
     target_link_libraries(${EXECUTABLE_NAME} ${LUAJIT_LIBRARIES})
 endif()
@@ -147,15 +107,10 @@ target_link_libraries(${EXECUTABLE_NAME} Threads::Threads)
 
 # Unix-specific options
 if(UNIX)
-	if(APPLE)
-		# Enable -rdynamic under Unix (required for LuaJIT's FFI)
-		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
-	else()
-		target_link_libraries(${EXECUTABLE_NAME} "-lX11")
+	target_link_libraries(${EXECUTABLE_NAME} "-lX11")
 
-		# Enable -rdynamic under Unix (required for LuaJIT's FFI) and specify rpath
-		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic -Wl,-rpath=lib")
-	endif()
+	# Enable -rdynamic under Unix (required for LuaJIT's FFI) and specify rpath
+	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic -Wl,-rpath=lib")
 
 	# Use gold linker if supported
 	if("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")
@@ -171,17 +126,55 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 	target_compile_definitions(${EXECUTABLE_NAME} PRIVATE WOS_DEBUG)
 endif()
 
-# Define project name for Version file
-if(NOT DEFINED WOS_APPLICATION_NAME)
-	set(WOS_APPLICATION_NAME "WorldOfSand" CACHE STRING "World of Sand application name")
-endif()
-if(NOT WOS_APPLICATION_NAME STREQUAL "")
-	set_property(SOURCE "src/Version.cpp"
-		APPEND
-		PROPERTY COMPILE_DEFINITIONS
-		WOS_APPLICATION_NAME=${WOS_APPLICATION_NAME}
-	)
+# Install
+option(LUAVIS_SYMLINKS "Instead of a copy, create a symlink for the config.json file and the assets folder" OFF)
+
+install(TARGETS LuaVis)
+install(FILES run.bat;run.sh DESTINATION bin)
+
+if(LUAVIS_SYMLINKS)
+    install(CODE
+        "
+        if(EXISTS ${CMAKE_INSTALL_PREFIX}/bin/config.json AND NOT IS_SYMLINK ${CMAKE_INSTALL_PREFIX}/bin/config.json)
+            message(FATAL_ERROR \"Cannot create symbolic link. File 'config.json' already exists.\")
+        endif()
+        if(EXISTS ${CMAKE_INSTALL_PREFIX}/bin/assets AND NOT IS_SYMLINK ${CMAKE_INSTALL_PREFIX}/bin/assets)
+            message(FATAL_ERROR \"Cannot create symbolic link. Directory 'assets' already exists.\")
+        endif()
+        "
+    )
+    
+    install(CODE "file(CREATE_LINK ${CMAKE_SOURCE_DIR}/config.json ${CMAKE_INSTALL_PREFIX}/bin/config.json SYMBOLIC)")
+    install(CODE "file(CREATE_LINK ${CMAKE_SOURCE_DIR}/assets ${CMAKE_INSTALL_PREFIX}/bin/assets SYMBOLIC)")
+else()
+    install(CODE
+        "
+        if(IS_SYMLINK ${CMAKE_INSTALL_PREFIX}/bin/config.json)
+            file(REMOVE ${CMAKE_INSTALL_PREFIX}/bin/config.json)
+        endif()
+        if(IS_SYMLINK ${CMAKE_INSTALL_PREFIX}/bin/assets)
+            file(REMOVE ${CMAKE_INSTALL_PREFIX}/bin/assets)
+        endif()
+        "
+    )
+
+    install(FILES config.json DESTINATION bin)
+    install(DIRECTORY assets/ DESTINATION bin/assets PATTERN "gfx_*" EXCLUDE PATTERN "graphs" EXCLUDE)
 endif()
 
-# Copy resource files
-#file(COPY ${RESOURCES} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+if(WIN32)
+    set(SFML_DLL ${SFML_DIR})
+    string(REPLACE "/lib/cmake/SFML" "/bin" SFML_DLL "${SFML_DLL}")
+    install(DIRECTORY ${SFML_DLL}/ DESTINATION bin)
+
+    install(FILES ${cppfs_DIR}/cppfs.dll DESTINATION bin)
+
+    set(ZLIB_DLL ${ZLIB_LIBRARY})
+    string(REPLACE "/lib" "/bin" ZLIB_DLL "${ZLIB_DLL}")
+    string(REPLACE ".lib" ".dll" ZLIB_DLL "${ZLIB_DLL}")
+    install(FILES ${ZLIB_DLL} DESTINATION bin)
+
+    set(LUAJIT_DLL ${LUAJIT_INCLUDE_DIR})
+    string(REPLACE "/include" "/bin" LUAJIT_DLL "${LUAJIT_DLL}")
+    install(DIRECTORY ${LUAJIT_DLL}/ DESTINATION bin)
+endif()

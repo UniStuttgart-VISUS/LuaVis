@@ -130,7 +130,7 @@
 			},
 			"title": "LuaVis",
 			"version": "v0",
-			"size": [644, 540],
+			"size": [1288, 1080],
 			"framerate": 60,
 			"icon": "gfx/necro/icons/synchrony.png",
 		},

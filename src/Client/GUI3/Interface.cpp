@@ -277,7 +277,7 @@ void Interface::display()
 	myWindow.clear();
 	myWindow.setView(sf::View(sf::FloatRect(0, 0, getSize().x, getSize().y)));
 
-	glEnable(0x9346); // conservative rasterization (NV)
+	//glEnable(0x9346); // conservative rasterization (NV)
 
 	sf::RenderStates states;
 	states.texture = getParentApplication().getMainTexture();
