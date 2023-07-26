@@ -8,9 +8,10 @@ Interactive framework for the visualization of flow graphs in porous media.
 
 LuaVis (C++) depends on the following libraries (please use the linked repositories for compatibility):
 
-- [LuaJIT](https://github.com/LuaJIT/LuaJIT)
+- [LuaJIT](https://github.com/LuaJIT/LuaJIT/tree/v2.1)
 - [cppfs](https://github.com/straubar/cppfs)
 - [SFML](https://github.com/Marukyu/SFML)
+- [zlib](https://github.com/madler/zlib)
 
 
 
