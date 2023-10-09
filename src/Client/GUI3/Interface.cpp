@@ -29,7 +29,7 @@
 #	undef ButtonPress
 #	undef ButtonRelease
 #endif
-#include <gl/GL.h>
+#include <GL/gl.h>
 
 using namespace gui3;
 

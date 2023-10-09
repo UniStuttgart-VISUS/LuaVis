@@ -7143,6 +7143,7 @@ namespace sol {
 #include <vector>
 #include <forward_list>
 #include <algorithm>
+#include <limits>
 #if defined(SOL_CXX17_FEATURES) && SOL_CXX17_FEATURES
 #endif // C++17
 
